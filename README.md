@@ -67,6 +67,10 @@ fl - The Heng et al. (2011) parameter used for pressure dependent IR optical dep
 iIC - Initial condition selection integer (3 = Guillot (2010) profile using k_V and k_IR) \
 corr - Flag to perform the adiabatic gradient correction in the initial conditions
 
+# Plotting results
+
+A python plotting routine, 'plot_TP.py' is provided to plot the results of the simulation.
+
 # Gaussian Ordinance values
 
 In methods that use Gaussian quadrature to perform the mu integration in intensity (to calculate the flux), various values and weights can be changed for testing at the top of the two-stream modules.
