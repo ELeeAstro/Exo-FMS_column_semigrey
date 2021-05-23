@@ -1,5 +1,7 @@
 # Exo-FMS_column_semigrey
 
+Elspeth KH Lee - May 2021
+
 This is one part of a series of codes that build upon different two-stream approaches and scheme, primarily useful for the GCM modelling community.
 This is the semi-grey version, where one band is in the visible, representing incident radiation from a host star, and one band in the IR, representing the internal radiation propigating inside the planetary atmosphere.
 
@@ -60,7 +62,7 @@ corr - Flag to perform the adiabatic gradient correction in the initial conditio
 
 # Gaussian Ordinance values
 
-In methods that use Gaussian quadrature to perform the mu integration in flux, various values can be changed for testing at the top of the two-stream modules.
+In methods that use Gaussian quadrature to perform the mu integration in intensity (to calculate the flux), various values and weights can be changed for testing at the top of the two-stream modules.
 You will need to clean and recompile the code if these are changed.
 
 # Personal recommendations
