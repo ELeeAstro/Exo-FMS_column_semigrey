@@ -22,12 +22,12 @@ We also include a dry convective adjustment schemes, currently only 'Ray_adj', b
 
 In the file 'FMS_RC.nml' you can select different options that control the simulation
 
-ts_scheme: 
-'Isothermal' - Isothermal ts method
-'Toon' - Toon et al. ts method
-'Shortchar' -  Short characteristics method
-'Heng' - Heng et al. method
-'Mendonca' - Mendonca et al. method (IN DEVELOPMENT)
+ts_scheme: \
+'Isothermal' - Isothermal ts method \
+'Toon' - Toon et al. ts method \
+'Shortchar' -  Short characteristics method \
+'Heng' - Heng et al. method \
+'Mendonca' - Mendonca et al. method (IN DEVELOPMENT) \
 
 opac_scheme:
 'Constant' - constant k_V and k_IR values
