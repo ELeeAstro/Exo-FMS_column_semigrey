@@ -5,6 +5,13 @@ Elspeth KH Lee - May 2021
 This is one part of a series of codes that build upon different two-stream approaches and scheme, primarily useful for the GCM modelling community.
 This is the semi-grey version, where one band is in the visible, representing incident radiation from a host star, and one band in the IR, representing the internal radiation propigating inside the planetary atmosphere.
 
+Some useful references useful for semi-grey modelling are: \
+Guillot (2010) \
+Parmentier et al. (2014, 2015) \
+Heng et al. (2011) \
+Rauscher & Menou (2012) \
+Lee et al. (2021)
+
 The advantage of semi-grey scheme is that they are fast and produce relatively realistic T-p profiles if parameters are chosen carefully.
 Larger errors typically occur at low pressure, where the cooling efficiencies are generally too low in the semi-grey framework, leading to highly isothermal upper atmospheres.
 
