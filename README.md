@@ -3,8 +3,8 @@
 This is one part of a series of codes that build upon different two-stream approaches and scheme, primarily useful for the GCM modelling community.
 This is the semi-grey version, where one band is in the visible, representing incident radiation from a host star, and one band in the IR, representing the internal radiation propigating inside the planetary atmosphere.
 
-The advantage of semi-grey scheme is that they are fast and produce relativly realistic T-p profiles if paramaters are chosen carefully.
-The big differences typically occur at low pressure, where the cooling efficencies are generally too low in the semi-grey framework, leading to highly isothermal upper atmospheres.
+The advantage of semi-grey scheme is that they are fast and produce relatively realistic T-p profiles if parameters are chosen carefully.
+The big differences typically occur at low pressure, where the cooling efficiencies are generally too low in the semi-grey framework, leading to highly isothermal upper atmospheres.
 
 This code performs various two-stream approaches (non-scattering) from the literature in a semi-grey context:
 1. Isothermal layer approximation
@@ -31,7 +31,7 @@ ts_scheme: \
 
 opac_scheme:
 'Constant' - constant k_V and k_IR values \
-'Heng' - Heng et al. method with fl paramater \
+'Heng' - Heng et al. method with fl parameter \
 'TK19' - Tan & Komacek (2019) pressure dependent k_V and k_IR UHJ scheme
 
 adj_scheme
@@ -45,7 +45,7 @@ t_step - time step in seconds \
 nstep - number of integer timesteps \
 Rd_air - specific gas constant of the air \
 cp_air - heat capacity at constant pressure of the air \
-grav - gravitional acceleration constant (m s-2) \
+grav - gravitational acceleration constant (m s-2) \
 mu_z - cosine angle of the solar zenith angle \
 Tirr - Irradiation temperature \
 Tint - Internal temperature
@@ -53,16 +53,16 @@ Tint - Internal temperature
 k_V - visible band opacity (cm2 kg-1) \
 k_IR - IR band opacity (cm2 kg-1) \
 AB - Bond albedo \
-fl - The Heng et al. (2011) paramater used for pressure depdendent IR optical depeths
+fl - The Heng et al. (2011) parameter used for pressure dependent IR optical depths
 
-iIC - Initial condition slection integer (3 = Guillot (2010) profile using k_V and k_IR) \
-corr - Flag to perform the adibiatic gradient correction in the initial conditions
+iIC - Initial condition selection integer (3 = Guillot (2010) profile using k_V and k_IR) \
+corr - Flag to perform the adiabatic gradient correction in the initial conditions
 
 # Gaussian Ordinance values
 
 In methods that use Gaussian quadrature to perform the mu integration in flux, various values can be changed for testing at the top of the two-stream modules.
 You will need to clean and recompile the code if these are changed.
 
-# Personal reccomendations
+# Personal recommendations
 
-We generally reccomend that the short characteristics method be used, as it is fast, efficenct, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
+We generally recommend that the short characteristics method be used, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
