@@ -6,7 +6,7 @@ This is one part of a series of codes that build upon different two-stream appro
 This is the semi-grey version, where one band is in the visible, representing incident radiation from a host star, and one band in the IR, representing the internal radiation propigating inside the planetary atmosphere.
 
 The advantage of semi-grey scheme is that they are fast and produce relatively realistic T-p profiles if parameters are chosen carefully.
-The big differences typically occur at low pressure, where the cooling efficiencies are generally too low in the semi-grey framework, leading to highly isothermal upper atmospheres.
+Larger errors typically occur at low pressure, where the cooling efficiencies are generally too low in the semi-grey framework, leading to highly isothermal upper atmospheres.
 
 This code performs various two-stream approaches (non-scattering) from the literature in a semi-grey context:
 1. Isothermal layer approximation
