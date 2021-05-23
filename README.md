@@ -79,3 +79,10 @@ You will need to clean and recompile the code if these are changed.
 # Personal recommendations
 
 We generally recommend that the short characteristics method be used, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
+
+# Future developments
+
+We will include versions that include multiple-scattering in the future. \
+Additional opacity schemes from the literature can be added. \
+Ability to include solid surface temperatures and temperature evolution, this involves some extra switches and boundary conditions. \
+Window fractions and functions.
