@@ -1,6 +1,10 @@
 # Exo-FMS_column_semigrey
 
-This is one part of a series of codes that build upon different sophistications, primarily useful 
+This is one part of a series of codes that build upon different two-stream approaches and scheme, primarily useful for the GCM modelling community.
+This is the semi-grey version, where one band is in the visible, representing incident radiation from a host star, and one band in the IR, representing the internal radiation propigating inside the planetary atmosphere.
+
+The advantage of semi-grey scheme is that they are fast and produce relativly realistic T-p profiles if paramaters are chosen carefully.
+The big differences typically occur at low pressure, where the cooling efficencies are generally too low in the semi-grey framework, leading to highly isothermal upper atmospheres.
 
 This code performs various two-stream approaches (non-scattering) from the literature in a semi-grey context:
 1. Isothermal layer approximation
@@ -11,7 +15,6 @@ This code performs various two-stream approaches (non-scattering) from the liter
 
 This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
 as they would perform inside a GCM setting. This is also useful to see differences in each method and their various approximations.
-
 
 We also include a dry convective adjustment schemes, currently only 'Ray_adj', based on Raymond Pierrehumbert's python code.
 
@@ -36,7 +39,7 @@ adj_scheme
 
 The option 'None' for each of these scheme will it off (e.g. To run without conv adjustment set adj_scheme = 'None')
 
-nlay, a_sh , b_sh - the number of layers, and filename that contain the a and b constants for the hybrid sigma grid
+nlay, a_sh , b_sh - the number of layers, and filenames that contain the a and b constants for the hybrid sigma grid
 
 t_step - time step in seconds
 nstep - number of integer timesteps
@@ -59,3 +62,7 @@ corr - Flag to perform the adibiatic gradient correction in the initial conditio
 
 In methods that use Gaussian quadrature to perform the mu integration in flux, various values can be changed for testing at the top of the two-stream modules.
 You will need to clean and recompile the code if these are changed.
+
+# Personal reccomendations
+
+We generally reccomend that the short characteristics method be used, as it is fast, efficenct, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
