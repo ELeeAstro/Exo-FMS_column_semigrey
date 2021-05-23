@@ -33,6 +33,7 @@ In the file 'FMS_RC.nml' you can select different options that control the simul
 
 ts_scheme: \
 'Isothermal' - Isothermal ts method \
+'Isothermal_2' - Isothermal ts method - high optical depth version \
 'Toon' - Toon et al. ts method \
 'Shortchar' -  Short characteristics method \
 'Heng' - Heng et al. method \

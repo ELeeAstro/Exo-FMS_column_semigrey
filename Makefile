@@ -27,6 +27,7 @@ OBJECTS = \
 	  IC_mod.o \
 	  dry_conv_adj_mod.o \
 	  ts_isothermal_mod.o \
+	  ts_isothermal_2_mod.o \
 	  ts_Toon_mod.o \
 	  ts_Heng_mod.o \
 	  ts_short_char_mod.o \

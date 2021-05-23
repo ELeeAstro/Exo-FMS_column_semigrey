@@ -13,6 +13,7 @@
 program Exo_FMS_RC
   use, intrinsic :: iso_fortran_env
   use ts_isothermal_mod, only : ts_isothermal
+  use ts_isothermal_2_mod, only : ts_isothermal_2
   use ts_Toon_mod, only : ts_Toon
   use ts_Heng_mod, only : ts_Heng
   use ts_short_char_mod, only : ts_short_char
@@ -204,6 +205,9 @@ program Exo_FMS_RC
     case('Isothermal')
       ! Isothermal layers approximation
       call ts_isothermal(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
+    case('Isothermal_2')
+      ! Isothermal layers approximation - first order fix for high optical depths
+      call ts_isothermal_2(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)  
     case('Toon')
       ! Toon method without scattering
       call ts_Toon(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)

@@ -16,8 +16,8 @@ Rd_air = 3556.8
 cp_air = 1.3e4
 grav = 10.0
 mu_z = 1.0
-Tirr = 1000.0
-Tint = 100.0
+Tirr = 1500.0
+Tint = 500.0
 
 k_V = 6e-4
 k_IR = 1e-3
