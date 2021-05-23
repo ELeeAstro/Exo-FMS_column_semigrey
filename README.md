@@ -57,7 +57,7 @@ cp_air - specific heat capacity (constant pressure) of the air (J kg-1 K-1) \
 grav - gravitational acceleration constant (m s-2) \
 mu_z - cosine angle of the solar zenith angle \
 Tirr - Irradiation temperature \
-Tint - Internal temperature
+Tint - Internal temperature 
 
 k_V - visible band opacity (m2 kg-1) \
 k_IR - IR band opacity (m2 kg-1) \
@@ -65,7 +65,8 @@ AB - Bond albedo \
 fl - The Heng et al. (2011) parameter used for pressure dependent IR optical depths
 
 iIC - Initial condition selection integer (3 = Guillot (2010) profile using k_V and k_IR) \
-corr - Flag to perform the adiabatic gradient correction in the initial conditions
+corr - Flag to perform the adiabatic gradient correction in the initial conditions \
+met - metallicty in dex solar (M/H)
 
 # Plotting results
 
