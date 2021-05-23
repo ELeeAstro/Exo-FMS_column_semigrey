@@ -43,15 +43,15 @@ nlay, a_sh , b_sh - the number of layers, and filenames that contain the a and b
 
 t_step - time step in seconds \
 nstep - number of integer timesteps \
-Rd_air - specific gas constant of the air \
-cp_air - heat capacity at constant pressure of the air \
+Rd_air - specific gas constant of the air (J kg-1 K-1)\
+cp_air - specific heat capacity (constant pressure) of the air (J kg-1 K-1) \
 grav - gravitational acceleration constant (m s-2) \
 mu_z - cosine angle of the solar zenith angle \
 Tirr - Irradiation temperature \
 Tint - Internal temperature
 
-k_V - visible band opacity (cm2 kg-1) \
-k_IR - IR band opacity (cm2 kg-1) \
+k_V - visible band opacity (m2 kg-1) \
+k_IR - IR band opacity (m2 kg-1) \
 AB - Bond albedo \
 fl - The Heng et al. (2011) parameter used for pressure dependent IR optical depths
 
