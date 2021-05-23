@@ -52,6 +52,8 @@ The option 'None' for each of these scheme will it off (e.g. To run without conv
 
 nlay, a_sh , b_sh - the number of layers, and filenames that contain the a and b constants for the hybrid sigma grid
 
+pref - reference surface pressure (pa)
+
 t_step - time step in seconds \
 nstep - number of integer timesteps \
 Rd_air - specific gas constant of the air (J kg-1 K-1)\
