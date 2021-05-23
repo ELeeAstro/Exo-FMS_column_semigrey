@@ -17,7 +17,7 @@ program Exo_FMS_RC
   use ts_Heng_mod, only : ts_Heng
   use ts_short_char_mod, only : ts_short_char
   use ts_Mendonca_mod, only : ts_Mendonca
-  use k_Rosseland_mod, only : k_Ross_TK19
+  use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
   use IC_mod, only : IC_profile
   use dry_conv_adj_mod, only : Ray_dry_adj
   use ieee_arithmetic
@@ -32,7 +32,7 @@ program Exo_FMS_RC
   integer :: n, i, k, u, j, inan
   integer :: nstep, nlay, nlev
   real(dp) :: t_step, t_tot
-  real(dp) :: mu_z, Tirr, Tint, F0, Fint, pref, pu
+  real(dp) :: mu_z, Tirr, Tint, F0, Fint, pref, pu, met
   real(dp) :: tau_Vref, tau_IRref
   real(dp), allocatable, dimension(:) :: Tl, pl, pe, dpe
   real(dp), allocatable, dimension(:) :: k_Vl, k_IRl
@@ -58,7 +58,7 @@ program Exo_FMS_RC
   integer :: u_nml
 
   namelist /FMS_RC_nml/ ts_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
-          & t_step, nstep, Rd_air, cp_air, grav, mu_z, Tirr, Tint, k_V, k_IR, AB, fl, &
+          & t_step, nstep, Rd_air, cp_air, grav, mu_z, Tirr, Tint, k_V, k_IR, AB, fl, met, &
           & iIC, corr
 
   !! Read input variables from namelist
@@ -125,6 +125,9 @@ program Exo_FMS_RC
     tau_Vref = (k_V * pref) / grav
     tau_IRref = (k_IR * pref) / grav / fl
   case default
+    tau_Vref = (k_V * pref) / grav
+    tau_IRref = (k_IR * pref) / grav
+    fl = 1.0_dp
   end select
 
   !! Initial condition T-p profile - see the routine for options
@@ -172,6 +175,22 @@ program Exo_FMS_RC
       do k = 1, nlay
         call k_Ross_TK19(pl(k), k_Vl(k), k_IRl(k))
         tau_Ve(k+1) = tau_Ve(k) + (k_Vl(k) * dpe(k)) / grav
+        tau_IRe(k+1) = tau_IRe(k) + (k_IRl(k) * dpe(k)) / grav
+      end do
+    case('Freedman')
+      ! Calculate optical depth structure for Freedman et al. (2014) Rosseland mean fitting function scheme
+      tau_Ve(:) = tau_Vref * pe(:)/pref
+      tau_IRe(1) = 0.0_dp
+      do k = 1, nlay
+        call k_Ross_Freedman(Tl(k), pl(k), met, k_IRl(k))
+        tau_IRe(k+1) = tau_IRe(k) + (k_IRl(k) * dpe(k)) / grav
+      end do
+    case('Valencia')
+      ! Calculate optical depth structure for Valencia et al. (2013) Rosseland mean fitting function scheme
+      tau_Ve(:) = tau_Vref * pe(:)/pref
+      tau_IRe(1) = 0.0_dp
+      do k = 1, nlay
+        call k_Ross_Valencia(Tl(k), pl(k), met, k_IRl(k))
         tau_IRe(k+1) = tau_IRe(k) + (k_IRl(k) * dpe(k)) / grav
       end do
     case default

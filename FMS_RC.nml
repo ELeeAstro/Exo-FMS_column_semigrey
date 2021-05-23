@@ -1,6 +1,6 @@
 &FMS_RC_nml
 
-ts_scheme = 'Isothermal'
+ts_scheme = 'Shortchar'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 
@@ -23,6 +23,7 @@ k_V = 6e-4
 k_IR = 1e-3
 AB = 0.0
 fl = 1.0
+met = 0.0
 
 iIC = 3
 corr = .False.
