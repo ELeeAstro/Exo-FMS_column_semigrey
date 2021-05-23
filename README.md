@@ -29,12 +29,12 @@ ts_scheme: \
 'Heng' - Heng et al. method \
 'Mendonca' - Mendonca et al. method (IN DEVELOPMENT) 
 
-opac_scheme:
+opac_scheme: \
 'Constant' - constant k_V and k_IR values \
 'Heng' - Heng et al. method with fl parameter \
 'TK19' - Tan & Komacek (2019) pressure dependent k_V and k_IR UHJ scheme
 
-adj_scheme
+adj_scheme: \
 'Ray_dry' - Ray Pierrehumbert's dry convective adjustment scheme
 
 The option 'None' for each of these scheme will it off (e.g. To run without conv adjustment set adj_scheme = 'None')
