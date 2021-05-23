@@ -7,9 +7,9 @@ This is the semi-grey version, where one band is in the visible, representing in
 
 Some useful references useful for semi-grey modelling are: \
 Guillot (2010) \
-Parmentier et al. (2014, 2015) \
 Heng et al. (2011) \
 Rauscher & Menou (2012) \
+Parmentier et al. (2014, 2015) \
 Lee et al. (2021)
 
 The advantage of semi-grey scheme is that they are fast and produce relatively realistic T-p profiles if parameters are chosen carefully.
