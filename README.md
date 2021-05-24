@@ -25,11 +25,11 @@ This code performs various two-stream approaches (non-scattering) from the liter
 This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
 as they would perform inside a GCM setting. This is also useful to see differences in each method and their various approximations.
 
-We also include a dry convective adjustment schemes, currently only 'Ray_adj', based on Raymond Pierrehumbert's python code.
+We also include dry convective adjustment schemes, currently only 'Ray_adj', based on Raymond Pierrehumbert's python code.
 
 # Namelist options
 
-In the file 'FMS_RC.nml' you can select different options that control the simulation
+In the file 'FMS_RC.nml' you can select different options that control the simulation, below are the brief descriptions and options for the paramaters.
 
 ts_scheme: \
 'Isothermal' - Isothermal ts method \
