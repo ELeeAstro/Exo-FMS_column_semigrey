@@ -4,9 +4,9 @@ ts_scheme = 'Shortchar'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 
-nlay = 54
-a_sh = 'Hybrid_sigma_grid_a.txt'
-b_sh = 'Hybrid_sigma_grid_b.txt'
+nlay = 99
+a_sh = 'Hybrid_sigma_grid_a_99.txt'
+b_sh = 'Hybrid_sigma_grid_b_99.txt'
 
 pref = 1e8
 
@@ -17,7 +17,7 @@ cp_air = 1.3e4
 grav = 10.0
 mu_z = 1.0
 Tirr = 1500.0
-Tint = 500.0
+Tint = 100.0
 
 k_V = 6e-4
 k_IR = 1e-3
