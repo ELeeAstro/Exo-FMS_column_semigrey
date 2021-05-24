@@ -15,6 +15,8 @@ Lee et al. (2021)
 The advantage of semi-grey scheme is that they are fast and produce relatively realistic T-p profiles if parameters are chosen carefully.
 Larger errors typically occur at low pressure, where the cooling efficiencies are generally too low in the semi-grey framework, leading to highly isothermal upper atmospheres.
 
+To compile enter 'make' in the main directory. To remove compiled code enter 'make clean'.
+
 This code performs various two-stream approaches (non-scattering) from the literature in a semi-grey context:
 1. Isothermal layer approximation
 2. Toon et al. method
