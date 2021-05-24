@@ -44,7 +44,7 @@ opac_scheme: \
 'Heng' - Heng et al. method with fl parameter \
 'TK19' - Tan & Komacek (2019) pressure dependent k_V and k_IR UHJ scheme \
 'Freedman' - Uses the Rosseland mean fitting function from Freedman et al. (2014) \
-'Valencia' - Uses the Rosseland mean fitting function from Valencia et al. (2013) \
+'Valencia' - Uses the Rosseland mean fitting function from Valencia et al. (2013)
 
 adj_scheme: \
 'Ray_dry' - Ray Pierrehumbert's dry convective adjustment scheme
