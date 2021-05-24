@@ -5,7 +5,7 @@ Elspeth KH Lee - May 2021
 This is one part of a series of codes that build upon different two-stream approaches and scheme, primarily useful for the GCM modelling community.
 This is the semi-grey version, where one band is in the visible, representing incident radiation from a host star, and one band in the IR, representing the internal radiation propigating inside the planetary atmosphere.
 
-Some useful references useful for semi-grey modelling are: \
+Some useful references for semi-grey RT modelling are: \
 Guillot (2010) \
 Heng et al. (2011) \
 Rauscher & Menou (2012) \
