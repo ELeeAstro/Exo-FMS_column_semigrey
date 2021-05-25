@@ -32,6 +32,7 @@ OBJECTS = \
 	  ts_Heng_mod.o \
 	  ts_short_char_mod.o \
     ts_Mendonca_mod.o \
+		ts_Lewis_scatter_mod.o \
     FMS_RC.o
 
 # executable statement

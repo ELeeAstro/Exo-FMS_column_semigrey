@@ -18,6 +18,7 @@ program Exo_FMS_RC
   use ts_Heng_mod, only : ts_Heng
   use ts_short_char_mod, only : ts_short_char
   use ts_Mendonca_mod, only : ts_Mendonca
+  use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
   use IC_mod, only : IC_profile
   use dry_conv_adj_mod, only : Ray_dry_adj
@@ -40,7 +41,10 @@ program Exo_FMS_RC
   real(dp), allocatable, dimension(:) :: tau_Ve, tau_IRe, tau_IRl
   real(dp), allocatable, dimension(:) :: dT_rad, dT_conv, net_F
 
+  real(dp), allocatable, dimension(:) :: sw_a, sw_g, lw_a, lw_g
+
   real(dp) :: cp_air, grav, k_IR, k_V, kappa_air, Rd_air
+  real(dp) :: sw_ac, sw_gc, lw_ac, lw_gc
 
   integer :: iIC
   logical :: corr
@@ -60,7 +64,7 @@ program Exo_FMS_RC
 
   namelist /FMS_RC_nml/ ts_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
           & t_step, nstep, Rd_air, cp_air, grav, mu_z, Tirr, Tint, k_V, k_IR, AB, fl, met, &
-          & iIC, corr
+          & iIC, corr, sw_ac, sw_gc, lw_ac, lw_gc
 
   !! Read input variables from namelist
   open(newunit=u_nml, file='FMS_RC.nml', status='old', action='read')
@@ -101,6 +105,12 @@ program Exo_FMS_RC
 
   if (ts_scheme == 'Heng') then
     allocate(tau_IRl(nlay))
+  else if (ts_scheme == 'Lewis' .or. ts_scheme == 'Lewis_sw') then
+    allocate(sw_a(nlay), sw_g(nlay), lw_a(nlay), lw_g(nlay))
+    sw_a(:) = sw_ac
+    sw_g(:) = sw_gc
+    lw_a(:) = lw_ac
+    lw_g(:) = lw_gc
   end if
 
   !! Calculate the adiabatic coefficent
@@ -207,7 +217,7 @@ program Exo_FMS_RC
       call ts_isothermal(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
     case('Isothermal_2')
       ! Isothermal layers approximation - first order fix for high optical depths
-      call ts_isothermal_2(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)  
+      call ts_isothermal_2(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
     case('Toon')
       ! Toon method without scattering
       call ts_Toon(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
@@ -222,6 +232,12 @@ program Exo_FMS_RC
       !! In development !!
       ! Mendonca method without scattering
       call ts_Mendonca(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
+    case("Lewis")
+      call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, net_F, 1)
+    case("Lewis_sw")
+      call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, net_F, 2)
     case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)
