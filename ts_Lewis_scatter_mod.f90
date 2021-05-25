@@ -91,6 +91,105 @@ contains
 
   end subroutine ts_Lewis_scatter
 
+  subroutine lw_grey_updown(nlay, nlev, bl, be_int, tau_IR, w0, g, mu_z, lw_up, lw_down)
+    implicit none
+
+    !! Input variables
+    integer, intent(in) :: nlay, nlev
+    real(dp), dimension(nlev), intent(in) :: tau_IR
+    real(dp), dimension(nlay), intent(in) :: bl, g, w0
+    real(dp), intent(in) :: be_int, mu_z
+
+    !! Output variables
+    real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
+
+    !! Work variables and arrays
+    integer :: k
+    real(dp), dimension(nlay) :: gh, gam1, gam2, gamb, gamp, gamm
+    real(dp), dimension(nlay) :: dtau
+    real(dp), dimension(nlev) :: direct
+
+    !! 3/2 closure hemispheric closure condition for g
+    gh(:) = g(:) * (3.0_dp/2.0_dp)
+
+    !! Have to compute SW optical depth as per definition in Pierrehumbert (2010)
+    do k = 1, nlay
+      dtau(k) = -(tau_IR(k+1) - tau_IR(k))
+    end do
+
+    !! gammas (as in Pierrehumbert, 2010)
+    gam1(:) = gam*(1.0_dp-gh(:)*w0(:)) + gamprime*(1.0_dp-w0(:))
+    gam2(:) = gam*(1.0_dp-gh(:)*w0(:)) - gamprime*(1.0_dp-w0(:))
+    gamb(:) = gam1(:) - gam2(:)
+    gamp(:) = 0.5_dp*w0(:) - gam*w0(:)*gh(:)*1.0_dp
+    gamm(:) = 0.5_dp*w0(:) + gam*w0(:)*gh(:)*1.0_dp
+
+    direct(:) = 0.0_dp
+
+    !! Call the two_stream_solver with matrix inversion
+    call two_stream_solver(nlay, 1.0_dp, 1.0_dp, be_int, bl, direct, dtau/2.0_dp, &
+    & gam1, gam2, gamb, gamp, gamm, lw_up, lw_down)
+
+
+  end subroutine lw_grey_updown
+
+  subroutine sw_grey_updown(nlay, nlev, Finc, tau_V, w0, g, mu_z, sw_up, sw_down)
+    implicit none
+
+    !! Input
+    integer, intent(in) :: nlay, nlev
+    real(dp), intent(in) :: Finc, mu_z
+    real(dp), dimension(nlev), intent(in) :: tau_V
+    real(dp), dimension(nlay), intent(in) :: w0, g
+
+    !! Output
+    real(dp), dimension(nlev), intent(out) :: sw_up, sw_down
+
+    !! Work variables
+    integer :: k
+    real(dp) :: b_int
+    real(dp), dimension(nlay) :: gh, gam1, gam2, gamb, gamp, gamm
+    real(dp), dimension(nlay) :: bl, dtau
+    real(dp), dimension(nlev) :: direct
+
+    gh(:) = g(:) * (3.0_dp/2.0_dp)
+
+    !! Have to compute SW optical depth as per definition in Pierrehumbert (2010)
+    do k = 1, nlay
+      dtau(k) = -(tau_V(k+1) - tau_V(k))
+    end do
+
+    !! gammas (as in Pierrehumbert, 2010)
+    gam1(:) = gam*(1.0_dp-gh(:)*w0(:)) + gamprime*(1.0_dp-w0(:))
+    gam2(:) = gam*(1.0_dp-gh(:)*w0(:)) - gamprime*(1.0_dp-w0(:))
+    gamb(:) = gam1(:) - gam2(:)
+    gamp(:) = 0.5_dp*w0(:) - gam*w0(:)*gh(:)*mu_z
+    gamm(:) = 0.5_dp*w0(:) + gam*w0(:)*gh(:)*mu_z
+
+    !! Original 1st order method
+    ! direct(1) = mu_z * Finc
+    ! do k = 1, nlay
+    !   direct(k+1) = direct(k) * (2.0_dp*mu_z + dtau(k))/(2.0_dp*mu_z - dtau(k))
+    !   if (direct(k+1) < 0.0_dp) then
+    !     direct(k+1) = 0.0_dp
+    !   end if
+    ! end do
+
+    !! Exponential dependent method
+    direct(:) = Finc * mu_z * exp(-tau_V(:)/mu_z)
+
+    !!!! Zero blackbody radiation for shortwave !!!!
+    b_int = 0.0_dp
+    bl(:) = 0.0_dp
+
+    !! Call the two_stream_solver with matrix inversion
+    call two_stream_solver(nlay, 0.0_dp, mu_z, b_int, bl, direct, dtau/2.0_dp, &
+    & gam1, gam2, gamb, gamp, gamm, sw_up, sw_down)
+
+    sw_down(:) = sw_down(:) + direct(:)
+
+  end subroutine sw_grey_updown
+
   subroutine lw_grey_updown_linear(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
     implicit none
 
@@ -172,110 +271,6 @@ contains
     lw_up(:) = twopi * lw_up(:)
 
   end subroutine lw_grey_updown_linear
-
-  subroutine lw_grey_updown(nlay, nlev, bl, be_int, tau_IR, w0, g, mu_z, lw_up, lw_down)
-    implicit none
-
-    !! Input variables
-    integer, intent(in) :: nlay, nlev
-    real(dp), dimension(nlev), intent(in) :: tau_IR
-    real(dp), dimension(nlay), intent(in) :: bl, g, w0
-    real(dp), intent(in) :: be_int, mu_z
-
-    !! Output variables
-    real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
-
-    !! Work variables and arrays
-    integer :: k
-    real(dp), dimension(nlay) :: gh, gam1, gam2, gamb, gamp, gamm
-    real(dp), dimension(nlay) :: dtau
-    real(dp), dimension(nlev) :: direct
-
-    !! 3/2 closure hemispheric closure condition for g 
-    gh(:) = g(:) * (3.0_dp/2.0_dp)
-
-    !! Have to compute SW optical depth as per definition in Pierrehumbert (2010)
-    do k = 1, nlay
-      dtau(k) = -(tau_IR(k+1) - tau_IR(k))
-    end do
-
-    !! gammas (as in Pierrehumbert, 2010)
-    gam1(:) = gam*(1.0_dp-gh(:)*w0(:)) + gamprime*(1.0_dp-w0(:))
-    gam2(:) = gam*(1.0_dp-gh(:)*w0(:)) - gamprime*(1.0_dp-w0(:))
-    gamb(:) = gam1(:) - gam2(:)
-    gamp(:) = 0.5_dp*w0(:) - gam*w0(:)*gh(:)*1.0_dp
-    gamm(:) = 0.5_dp*w0(:) + gam*w0(:)*gh(:)*1.0_dp
-
-    direct(:) = 0.0_dp
-
-    !! Call the two_stream_solver with matrix inversion
-    call two_stream_solver(nlay, 1.0_dp, 1.0_dp, be_int, bl, direct, dtau/2.0_dp, &
-    & gam1, gam2, gamb, gamp, gamm, lw_up, lw_down)
-
-
-  end subroutine lw_grey_updown
-
-  subroutine sw_grey_updown(nlay, nlev, Finc, tau_V, w0, g, mu_z, sw_up, sw_down)
-    implicit none
-
-    !! Input
-    integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: Finc, mu_z
-    real(dp), dimension(nlev), intent(in) :: tau_V
-    real(dp), dimension(nlay), intent(in) :: w0, g
-
-    !! Output
-    real(dp), dimension(nlev), intent(out) :: sw_up, sw_down
-
-    !! Work variables
-    integer :: k
-    real(dp) :: b_int
-    real(dp), dimension(nlay) :: gh, gam1, gam2, gamb, gamp, gamm
-    real(dp), dimension(nlay) :: bl, dtau
-    real(dp), dimension(nlev) :: direct
-
-    gh(:) = g(:) * (3.0_dp/2.0_dp)
-
-    !! Have to compute SW optical depth as per definition in Pierrehumbert (2010)
-    do k = 1, nlay
-      dtau(k) = -(tau_V(k+1) - tau_V(k))
-    end do
-
-    !! gammas (as in Pierrehumbert, 2010)
-    gam1(:) = gam*(1.0_dp-gh(:)*w0(:)) + gamprime*(1.0_dp-w0(:))
-    gam2(:) = gam*(1.0_dp-gh(:)*w0(:)) - gamprime*(1.0_dp-w0(:))
-    gamb(:) = gam1(:) - gam2(:)
-    gamp(:) = 0.5_dp*w0(:) - gam*w0(:)*gh(:)*mu_z
-    gamm(:) = 0.5_dp*w0(:) + gam*w0(:)*gh(:)*mu_z
-
-    !! Origional 1st order method
-    ! direct(1) = mu_z * Finc
-    ! do k = 1, nlay
-    !   direct(k+1) = direct(k) * (2.0_dp*mu_z + dtau(k))/(2.0_dp*mu_z - dtau(k))
-    !   if (direct(k+1) < 0.0_dp) then
-    !     direct(k+1) = 0.0_dp
-    !   end if
-    ! end do
-
-    !! Exponential dependent method
-    direct(:) = Finc * mu_z * exp(-tau_V(:)/mu_z)
-
-    !!!! Zero blackbody radiation for shortwave !!!!
-    b_int = 0.0_dp
-    bl(:) = 0.0_dp
-
-    !! Call the two_stream_solver with matrix inversion
-    call two_stream_solver(nlay, 0.0_dp, mu_z, b_int, bl, direct, dtau/2.0_dp, &
-    & gam1, gam2, gamb, gamp, gamm, sw_up, sw_down)
-
-    sw_down(:) = sw_down(:) + direct(:)
-
-    ! do k = 1, nlev
-    !   print*, k, Finc, direct(k), sw_up(k), sw_down(k)
-    ! end do
-    ! stop
-
-  end subroutine sw_grey_updown
 
   subroutine two_stream_solver(nlevels, alpha_g, coszen, pi_B_surf, pi_B,  I_direct, del_tau, gammaone, &
     gammatwo, gammab, gammaplus, gammaminus, I_up, I_down)

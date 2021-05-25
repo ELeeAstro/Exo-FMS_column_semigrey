@@ -1,6 +1,6 @@
 &FMS_RC_nml
 
-ts_scheme = 'Lewis_sw'
+ts_scheme = 'Toon'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 
@@ -15,7 +15,7 @@ nstep = 1000000
 Rd_air = 3556.8
 cp_air = 1.3e4
 grav = 10.0
-mu_z = 1.0
+mu_z = 0.99
 Tirr = 1500.0
 Tint = 100.0
 

@@ -29,6 +29,7 @@ OBJECTS = \
 	  ts_isothermal_mod.o \
 	  ts_isothermal_2_mod.o \
 	  ts_Toon_mod.o \
+		ts_Toon_scatter_mod.o \
 	  ts_Heng_mod.o \
 	  ts_short_char_mod.o \
     ts_Mendonca_mod.o \

@@ -38,10 +38,11 @@ ts_scheme: \
 'Isothermal' - Isothermal ts method \
 'Isothermal_2' - Isothermal ts method - high optical depth version \
 'Toon' - Toon et al. ts method \
+'Toon_scatter' - Toon et al. ts method with scattering (IN DEVELOPMENT) \
 'Shortchar' -  Short characteristics method \
 'Heng' - Heng et al. method \
-'Lewis' - Neil Lewis method following Pierrehumbert (2010) \
-'Lewis_sw' - 'Lewis' but only shortwave scattering (Shortchar IR) \
+'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
+'Lewis_scatter_sw' - 'Lewis' but only shortwave scattering (Shortchar for IR) \
 'Mendonca' - Mendonca et al. method (IN DEVELOPMENT)
 
 opac_scheme: \

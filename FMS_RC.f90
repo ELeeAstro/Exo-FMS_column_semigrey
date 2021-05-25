@@ -15,6 +15,7 @@ program Exo_FMS_RC
   use ts_isothermal_mod, only : ts_isothermal
   use ts_isothermal_2_mod, only : ts_isothermal_2
   use ts_Toon_mod, only : ts_Toon
+  use ts_Toon_scatter_mod, only : ts_Toon_scatter
   use ts_Heng_mod, only : ts_Heng
   use ts_short_char_mod, only : ts_short_char
   use ts_Mendonca_mod, only : ts_Mendonca
@@ -105,7 +106,7 @@ program Exo_FMS_RC
 
   if (ts_scheme == 'Heng') then
     allocate(tau_IRl(nlay))
-  else if (ts_scheme == 'Lewis' .or. ts_scheme == 'Lewis_sw') then
+  else if (ts_scheme == 'Lewis_scatter' .or. ts_scheme == 'Lewis_scatter_sw' .or. ts_scheme == 'Toon_scatter') then
     allocate(sw_a(nlay), sw_g(nlay), lw_a(nlay), lw_g(nlay))
     sw_a(:) = sw_ac
     sw_g(:) = sw_gc
@@ -221,6 +222,9 @@ program Exo_FMS_RC
     case('Toon')
       ! Toon method without scattering
       call ts_Toon(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
+    case("Toon_scatter")
+      call ts_Toon_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, net_F)
     case('Shortchar')
       ! Short characteristics method without scattering
       call ts_short_char(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
@@ -228,16 +232,16 @@ program Exo_FMS_RC
       ! Heng flux method without scattering
       tau_IRl(:) = fl*tau_IRref*(pl(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pl(:)/pref)**2  ! Optical depth at layer midpoints
       call ts_Heng(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, net_F)
+    case("Lewis_scatter")
+      call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, net_F, 1)
+    case("Lewis_scatter_sw")
+      call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, net_F, 2)
     case('Mendonca')
       !! In development !!
       ! Mendonca method without scattering
       call ts_Mendonca(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
-    case("Lewis")
-      call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, net_F, 1)
-    case("Lewis_sw")
-      call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, net_F, 2)
     case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)
