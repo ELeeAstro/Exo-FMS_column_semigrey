@@ -22,7 +22,8 @@ This code performs various two-stream approaches (non-scattering) from the liter
 2. Toon et al. method
 3. Short Characteristics method
 4. Heng et al. method
-5. Mendonca et al. method (IN DEVELOPMENT)
+5. Neil Lewis' scattering code, following Pierrehumbert (2010)
+6. Mendonca et al. method (IN DEVELOPMENT)
 
 This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
 as they would perform inside a GCM setting. This is also useful to see differences in each method and their various approximations.
@@ -41,7 +42,7 @@ ts_scheme: \
 'Heng' - Heng et al. method \
 'Lewis' - Neil Lewis method following Pierrehumbert (2010) \
 'Lewis_sw' - 'Lewis' but only shortwave scattering (Shortchar IR) \
-'Mendonca' - Mendonca et al. method (IN DEVELOPMENT) 
+'Mendonca' - Mendonca et al. method (IN DEVELOPMENT)
 
 opac_scheme: \
 'Constant' - constant k_V and k_IR values \
