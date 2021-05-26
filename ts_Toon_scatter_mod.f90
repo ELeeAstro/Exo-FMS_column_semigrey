@@ -1,10 +1,11 @@
 !!!
 ! Elspeth KH Lee - May 2021
-! Two-stream method following a simplified Toon method (Toon et al. 1989)
-! This is the method in the no-scattering limit (pure absorption - w0 = 0).
+! Two-stream method following the Toon method (Toon et al. 1989)
+!
 ! Based on the CHIMERA code by Mike Line, but cleaned up slightly
 ! Pros: Fast, accurate at high optical depths, well used and familiar method
-! Cons: No scattering
+! Cons:
+! IN DEVELOPMENT - USE WITH UTMOST CAUTION, YOU WILL GET WRONG ANSWERS
 !!!
 
 module ts_Toon_scatter_mod
@@ -385,7 +386,7 @@ contains
 
     as(l) = af(l)/bf(l)
     ds(l) = df(l)/bf(l)
-    
+
     do i = l-1, 1, -1
       x = 1.0_dp/(bf(i) - cf(i)*as(i+1))
       as(i) = af(i)*x

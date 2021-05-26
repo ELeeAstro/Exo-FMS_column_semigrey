@@ -1,8 +1,8 @@
 !!!
 ! Elspeth KH Lee - May 2021
-! Two-stream method following the isothermal layer approximation
-! Pros: Very fast
-! Cons: Inaccurate at high optical depths (has no linear in tau term)
+! Scattering code of Neil Lewis, following Pierrehumbert (2010)
+! Pros: Has scattering
+! Cons: Inaccurate at high optical depths
 !!!
 
 module ts_Lewis_scatter_mod

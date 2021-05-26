@@ -223,6 +223,8 @@ program Exo_FMS_RC
       ! Toon method without scattering
       call ts_Toon(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
     case("Toon_scatter")
+      !! In development !!
+      ! Toon method with scattering
       call ts_Toon_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, net_F)
     case('Shortchar')
@@ -233,9 +235,11 @@ program Exo_FMS_RC
       tau_IRl(:) = fl*tau_IRref*(pl(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pl(:)/pref)**2  ! Optical depth at layer midpoints
       call ts_Heng(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, net_F)
     case("Lewis_scatter")
+      ! Neil Lewis's code with scattering
       call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, net_F, 1)
     case("Lewis_scatter_sw")
+      ! Neil Lewis's code with scattering (shortwave only)
       call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, net_F, 2)
     case('Mendonca')
