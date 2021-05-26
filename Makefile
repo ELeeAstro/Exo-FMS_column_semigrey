@@ -6,8 +6,8 @@
 F90          = gfortran
 F90LINKER    = gfortran
 DEFS      =
-#FFLAGS   	= -Og -pipe -g -fbacktrace -Wall -Wextra -pedantic -fcheck=all -Wconversion -fbounds-check
-FFLAGS   = -O3 -pipe
+FFLAGS   	= -Og -pipe -g -fbacktrace -Wall -Wextra -pedantic -fcheck=all -Wconversion -fbounds-check
+#FFLAGS   = -O3 -pipe
 INCLUDES  =
 LFLAGS    = $(FFLAGS)
 

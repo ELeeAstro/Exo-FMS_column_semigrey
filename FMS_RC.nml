@@ -1,6 +1,6 @@
 &FMS_RC_nml
 
-ts_scheme = 'Toon'
+ts_scheme = 'Isothrmal'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 

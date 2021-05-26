@@ -263,7 +263,7 @@ contains
     denom(:) = max(lam(:)**2 - 1.0_dp/(mu_z**2),1e-10_dp)
     Am(:) = Finc * w0(:) *(g4(:) * (g1(:) + 1.0_dp/mu_z) + g2(:)*g3(:))/denom(:)
     Ap(:) = Finc * w0(:) *(g3(:) * (g1(:) - 1.0_dp/mu_z) + g2(:)*g4(:))/denom(:)
-
+    !
     ! do i = 1, nlay
     !   print*, i, Am(i), Ap(i)
     ! end do
@@ -363,8 +363,10 @@ contains
     ! do i = 1, nlev
     !   print*, i, sw_up(i), sw_down(i), direct(i)
     ! end do
+    ! stop
 
     sw_down(:) = sw_down(:) + direct(:)
+    sw_up(:) = sw_up(:)
 
   end subroutine sw_grey_updown
 
@@ -383,18 +385,17 @@ contains
 
     as(l) = af(l)/bf(l)
     ds(l) = df(l)/bf(l)
-
-    do i = 2, l
-      x = 1.0_dp/(bf(l+1-i) - cf(l+1-i)*as(l+2-i))
-      as(l+1-i) = af(l+1-i)*x
-      ds(l+1-i) = (df(l+1-i) - cf(l+1-i)*ds(l+2-i))*x
+    
+    do i = l-1, 1, -1
+      x = 1.0_dp/(bf(i) - cf(i)*as(i+1))
+      as(i) = af(i)*x
+      ds(i) = (df(i) - cf(i)*ds(i+1))*x
     end do
 
     xk(1) = ds(1)
 
     do i = 2, l
-      xkb = xk(i-1)
-      xk(i) = ds(i)-as(i)*xkb
+      xk(i) = ds(i)-as(i)*xk(i-1)
     end do
 
   end subroutine dtridgl

@@ -51,7 +51,7 @@ contains
     integer :: i
     real(dp) :: Finc, be_int
     real(dp), dimension(nlev) :: Te, be
-    real(dp), dimension(nlev) :: bl
+    real(dp), dimension(nlay) :: bl
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
 
@@ -295,11 +295,11 @@ contains
 
   N = 2*(nlevels + 1)
 
-  I_direct_full = (I_direct(1:nlevels) + I_direct(2:nlevels+1)) / 2 ! move I_direct to full model levels, i.e. I_1 = (I_1/2 + I_3/2) / 2 (approximate, not sure how accurate)
+  I_direct_full = (I_direct(1:nlevels) + I_direct(2:nlevels+1)) / 2.0_dp ! move I_direct to full model levels, i.e. I_1 = (I_1/2 + I_3/2) / 2 (approximate, not sure how accurate)
 
 
   ! MAKE MATRIX OF ABSORPTION / SCATTERING COEFFICIENTS - band diagonal matrix
-  A = 0.0
+  A = 0.0_dp
   ! fill main diagonal
   lcounter1 = 1
   lcounter2 = 1
@@ -310,10 +310,10 @@ contains
   A(i,i) = 1
   else
   if (mod(i,2).eq.1) then
-  A(i,i) = -1 + gammaone(lcounter1) / 2 * del_tau(lcounter1)
+  A(i,i) = -1 + gammaone(lcounter1) / 2.0_dp * del_tau(lcounter1)
   lcounter1 = lcounter1 + 1
   else
-  A(i,i) = 1 - gammaone(lcounter2) / 2 * del_tau(lcounter2)
+  A(i,i) = 1 - gammaone(lcounter2) / 2.0_dp * del_tau(lcounter2)
   lcounter2 = lcounter2 + 1
   endif
   endif
@@ -327,12 +327,12 @@ contains
   if (i.eq.N-1) then
   A(i,i+1) = - alpha_g ! lower bc
   else
-  A(i,i+1) = -gammatwo(lcounter1) / 2 * del_tau(lcounter1)
+  A(i,i+1) = -gammatwo(lcounter1) / 2.0_dp * del_tau(lcounter1)
   lcounter1 = lcounter1 + 1
   endif
   !else
   if (i.ne.1) then ! for i = 1, A(2,1) = 0 for upper bc
-  A(i+1, i) = gammatwo(lcounter2) / 2 * del_tau(lcounter2)
+  A(i+1, i) = gammatwo(lcounter2) / 2.0_dp * del_tau(lcounter2)
   lcounter2 = lcounter2 + 1
   endif
   endif
@@ -343,10 +343,10 @@ contains
   lcounter2 = 1
   do i = 1, N-2
   if (mod(i,2).eq.1) then
-  A(i, i+2) = 1+ gammaone(lcounter1) / 2 * del_tau(lcounter1)
+  A(i, i+2) = 1.0_dp + gammaone(lcounter1) / 2.0_dp * del_tau(lcounter1)
   lcounter1 = lcounter1 + 1
   else
-  A(i+2, i) = -1 - gammaone(lcounter2) / 2 * del_tau(lcounter2)
+  A(i+2, i) = -1 - gammaone(lcounter2) / 2.0_dp * del_tau(lcounter2)
   lcounter2 = lcounter2 + 1
   endif
   enddo
@@ -356,10 +356,10 @@ contains
   lcounter2 = 1
   do i = 1, N-3
   if (mod(i,2).eq.1) then
-  A(i, i+3) = - gammatwo(lcounter1) / 2 * del_tau(lcounter1)
+  A(i, i+3) = - gammatwo(lcounter1) / 2.0_dp * del_tau(lcounter1)
   lcounter1 = lcounter1 + 1
   !else
-  A(i+3, i) = gammatwo(lcounter2) / 2 * del_tau(lcounter2)
+  A(i+3, i) = gammatwo(lcounter2) / 2.0_dp * del_tau(lcounter2)
   lcounter2 = lcounter2 + 1
   endif
   enddo
@@ -376,7 +376,7 @@ contains
   enddo
 
   ! Make source term
-  source_term = 0.0
+  source_term = 0.0_dp
   source_term(1) = del_tau(1) * (gammab(1) * pi_B(1) + gammaplus(1) * I_direct_full(1) / coszen)
   lcounter1 = 2
   lcounter2 = 1
@@ -386,13 +386,14 @@ contains
   gammaplus(lcounter1) * I_direct_full(lcounter1) / coszen)
   lcounter1 = lcounter1 + 1
   else
-  source_term(i) = del_tau(lcounter2) * (-1*gammab(lcounter2) * pi_B(lcounter2) - &
+  source_term(i) = del_tau(lcounter2) * (-1.0_dp*gammab(lcounter2) * pi_B(lcounter2) - &
   gammaminus(lcounter2) * I_direct_full(lcounter2) / coszen)
   lcounter2 = lcounter2 + 1
   endif
   enddo
-  source_term(N-1) = alpha_g * I_direct(nlevels+1) + (1 - alpha_g) * pi_B_surf
-  source_term(N) = del_tau(nlevels) * (-1*gammab(nlevels) * pi_B(nlevels) - gammaminus(nlevels) * I_direct_full(nlevels) / coszen)
+  source_term(N-1) = alpha_g * I_direct(nlevels+1) + (1.0_dp - alpha_g) * pi_B_surf
+  source_term(N) = del_tau(nlevels) * &
+    & (-1.0_dp*gammab(nlevels) * pi_B(nlevels) - gammaminus(nlevels) * I_direct_full(nlevels) / coszen)
 
 
   ! call LU factorization
@@ -458,7 +459,7 @@ contains
   DO JZ=J0,J1
   I0=M+1-JZ
   DO I=I0,ML
-  B(I,JZ)=0.D0
+  B(I,JZ)=0.0_dp
   ENDDO
   ENDDO
   ENDIF
@@ -472,7 +473,7 @@ contains
   JZ=JZ+1
   IF(JZ.LE.N.AND.ML.GE.1) THEN
   DO I=1,ML
-  B(I,JZ)=0.D0
+  B(I,JZ)=0.0_dp
   ENDDO
   ENDIF
 
@@ -480,13 +481,13 @@ contains
   call IAMAX(B(M,K),LM+1, OUT)
   L=OUT+M-1
   IPVT(K)=L+K-M
-  IF(B(L,K).EQ.0.D0) GO TO 10
+  IF(B(L,K).EQ.0.0_dp) GO TO 10
   IF(L.NE.M) THEN
   T=B(L,K)
   B(L,K)=B(M,K)
   B(M,K)=T
   ENDIF
-  T=-1.D0/B(M,K)
+  T=-1.0_dp/B(M,K)
   CALL SCALE(LM,T,B(M+1,K))
 
   JU=MIN(MAX(JU,MU+IPVT(K)),N)
@@ -509,7 +510,7 @@ contains
   ENDDO
   ENDIF
   IPVT(N)=N
-  IF(B(M,N).EQ.0.D0) IND=N
+  IF(B(M,N).EQ.0.0_dp) IND=N
   END SUBROUTINE NSBFAC
 
   SUBROUTINE DAXPY(N,A,X,Y)
@@ -523,7 +524,7 @@ contains
   SUBROUTINE IAMAX(A,N,FINAL)
   INTEGER N, I, FINAL
   REAL(dp) A(*),T
-  T=0.d0
+  T=0.0_dp
   DO I=1,N
   IF(ABS(A(I)).GT.T) THEN
   t=abs(A(I))
