@@ -22,7 +22,7 @@ This code performs various two-stream approaches from the literature in a semi-g
 2. Toon et al. method
 3. Short Characteristics method
 4. Heng et al. method
-5. Neil Lewis' scattering code, following Pierrehumbert (2010)
+5. Neil Lewis's scattering code, following Pierrehumbert (2010)
 6. Mendonca et al. method (IN DEVELOPMENT)
 7. Two-stream DISORT version (w. modifications by Xianyu Tan)
 
@@ -57,7 +57,7 @@ opac_scheme: \
 adj_scheme: \
 'Ray_dry' - Ray Pierrehumbert's dry convective adjustment scheme
 
---- The option 'None' for each of these scheme will it off (e.g. To run without conv adjustment set adj_scheme = 'None') ---
+--- The option 'None' for each of these scheme will turn it off (e.g. To run without conv adjustment set adj_scheme = 'None') ---
 
 nlay, a_sh , b_sh - the number of layers, and filenames that contain the a and b constants for the hybrid sigma grid
 
