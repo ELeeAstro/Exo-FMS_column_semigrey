@@ -17,13 +17,14 @@ Larger errors typically occur at low pressure, where the cooling efficiencies ar
 
 To compile enter 'make' in the main directory. To remove compiled code enter 'make clean'.
 
-This code performs various two-stream approaches (non-scattering) from the literature in a semi-grey context:
+This code performs various two-stream approaches from the literature in a semi-grey context:
 1. Isothermal layer approximation
 2. Toon et al. method
 3. Short Characteristics method
 4. Heng et al. method
 5. Neil Lewis' scattering code, following Pierrehumbert (2010)
 6. Mendonca et al. method (IN DEVELOPMENT)
+7. Two-stream DISORT version (w. modifications by Xianyu Tan)
 
 This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
 as they would perform inside a GCM setting. This is also useful to see differences in each method and their various approximations.
@@ -32,7 +33,7 @@ We also include dry convective adjustment schemes, currently only 'Ray_adj', bas
 
 # Namelist options
 
-In the file 'FMS_RC.nml' you can select different options that control the simulation, below are the brief descriptions and options for the paramaters.
+In the file 'FMS_RC.nml' you can select different options that control the simulation, below are the brief descriptions and options for the parameters.
 
 ts_scheme: \
 'Isothermal' - Isothermal ts method \
@@ -43,7 +44,8 @@ ts_scheme: \
 'Heng' - Heng et al. method \
 'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
 'Lewis_scatter_sw' - 'Lewis' but only shortwave scattering ('Shortchar' for IR) \
-'Mendonca' - Mendonca et al. method (IN DEVELOPMENT)
+'Mendonca' - Mendonca et al. method (IN DEVELOPMENT) \
+'Disort_scatter' - two-stream DISORT version with scattering
 
 opac_scheme: \
 'Constant' - constant k_V and k_IR values \
@@ -95,7 +97,8 @@ You will need to clean and recompile the code if these are changed.
 
 # Personal recommendations
 
-We generally recommend that the short characteristics method be used, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
+For non-scattering problems, we generally recommend that the short characteristics method be used, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
+For scattering problems we recommend the two stream DISORT version, it is very reliable but generally slower compared to other scattering methods.
 
 # Future developments
 

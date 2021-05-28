@@ -1,6 +1,6 @@
 &FMS_RC_nml
 
-ts_scheme = 'Isothrmal'
+ts_scheme = 'Disort_scatter'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 

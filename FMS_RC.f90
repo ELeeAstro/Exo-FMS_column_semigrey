@@ -20,6 +20,7 @@ program Exo_FMS_RC
   use ts_short_char_mod, only : ts_short_char
   use ts_Mendonca_mod, only : ts_Mendonca
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
+  use ts_disort_scatter_mod, only : ts_disort_scatter
   use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
   use IC_mod, only : IC_profile
   use dry_conv_adj_mod, only : Ray_dry_adj
@@ -106,7 +107,8 @@ program Exo_FMS_RC
 
   if (ts_scheme == 'Heng') then
     allocate(tau_IRl(nlay))
-  else if (ts_scheme == 'Lewis_scatter' .or. ts_scheme == 'Lewis_scatter_sw' .or. ts_scheme == 'Toon_scatter') then
+  else if (ts_scheme == 'Lewis_scatter' .or. ts_scheme == 'Lewis_scatter_sw' .or. ts_scheme == 'Toon_scatter' &
+          & .or. ts_scheme == 'Disort_scatter') then
     allocate(sw_a(nlay), sw_g(nlay), lw_a(nlay), lw_g(nlay))
     sw_a(:) = sw_ac
     sw_g(:) = sw_gc
@@ -234,14 +236,18 @@ program Exo_FMS_RC
       ! Heng flux method without scattering
       tau_IRl(:) = fl*tau_IRref*(pl(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pl(:)/pref)**2  ! Optical depth at layer midpoints
       call ts_Heng(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, net_F)
-    case("Lewis_scatter")
+    case('Lewis_scatter')
       ! Neil Lewis's code with scattering
       call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, net_F, 1)
-    case("Lewis_scatter_sw")
+    case('Lewis_scatter_sw')
       ! Neil Lewis's code with scattering (shortwave only)
       call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, net_F, 2)
+    case('Disort_scatter')
+      ! Two-stream DISORT version
+      call ts_disort_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, net_F)
     case('Mendonca')
       !! In development !!
       ! Mendonca method without scattering
