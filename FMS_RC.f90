@@ -52,7 +52,12 @@ program Exo_FMS_RC
   logical :: corr
   real(dp) :: prc
 
-  real(dp) :: fl, AB
+  real(dp) :: fl, AB, olr, Ts, dTs, net_Fs
+
+  logical :: surf
+  real(dp) :: Ts_init, sw_a_surf, cp_surf, Tstrat_init, lw_a_surf, ns, nl
+
+  logical :: Bezier
 
   integer :: ua, ub
   character(len=50) :: a_sh, b_sh
@@ -66,7 +71,8 @@ program Exo_FMS_RC
 
   namelist /FMS_RC_nml/ ts_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
           & t_step, nstep, Rd_air, cp_air, grav, mu_z, Tirr, Tint, k_V, k_IR, AB, fl, met, &
-          & iIC, corr, sw_ac, sw_gc, lw_ac, lw_gc
+          & iIC, corr, sw_ac, sw_gc, lw_ac, lw_gc, sw_a_surf, Bezier, surf, Ts_init, cp_surf, &
+          & Tstrat_init, lw_a_surf, ns, nl
 
   !! Read input variables from namelist
   open(newunit=u_nml, file='FMS_RC.nml', status='old', action='read')
@@ -107,14 +113,15 @@ program Exo_FMS_RC
 
   if (ts_scheme == 'Heng') then
     allocate(tau_IRl(nlay))
-  else if (ts_scheme == 'Lewis_scatter' .or. ts_scheme == 'Lewis_scatter_sw' .or. ts_scheme == 'Toon_scatter' &
-          & .or. ts_scheme == 'Disort_scatter') then
-    allocate(sw_a(nlay), sw_g(nlay), lw_a(nlay), lw_g(nlay))
-    sw_a(:) = sw_ac
-    sw_g(:) = sw_gc
-    lw_a(:) = lw_ac
-    lw_g(:) = lw_gc
   end if
+
+  !! Allocate cloud properties - assume constant for all layers in this test code
+  !! Adjust these parts for your own situations
+  allocate(sw_a(nlay), sw_g(nlay), lw_a(nlay), lw_g(nlay))
+  sw_a(:) = sw_ac
+  sw_g(:) = sw_gc
+  lw_a(:) = lw_ac
+  lw_g(:) = lw_gc
 
   !! Calculate the adiabatic coefficent
   kappa_air = Rd_air/cp_air   ! kappa = Rd/cp
@@ -145,7 +152,8 @@ program Exo_FMS_RC
   end select
 
   !! Initial condition T-p profile - see the routine for options
-  call IC_profile(iIC,corr,nlay,pref,pl,k_Vl,k_IRl,Tint,mu_z,Tirr,grav,fl,Tl,prc)
+  call IC_profile(iIC,corr,nlay,pref,pl,k_Vl,k_IRl,Tint,mu_z,Tirr,grav,fl,Tl,prc, &
+  & Ts_init, Tstrat_init, kappa_air)
 
   !! Print initial T-p profile
   do i = 1, nlay
@@ -153,6 +161,7 @@ program Exo_FMS_RC
   end do
   print*, '--------------'
 
+  Ts = Ts_init
 
   !! Write out initial conditions
   open(newunit=u,file='FMS_RC_ic.out',action='readwrite')
@@ -180,8 +189,8 @@ program Exo_FMS_RC
       tau_Ve(:) = tau_Vref * pe(:)/pref
       tau_IRe(:) = tau_IRref * pe(:)/pref
     case('Heng')
-      tau_Ve(:) = tau_Vref * pe(:)/pref
-      tau_IRe(:) = fl*tau_IRref*(pe(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pe(:)/pref)**2
+      tau_Ve(:) = tau_Vref * (pe(:)/pref)**ns
+      tau_IRe(:) = fl*tau_IRref*(pe(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pe(:)/pref)**nl
     case('TK19')
       ! Calculate optical depth structure for TK19 scheme
       tau_Ve(1) = 0.0_dp
@@ -217,41 +226,43 @@ program Exo_FMS_RC
     select case(ts_scheme)
     case('Isothermal')
       ! Isothermal layers approximation
-      call ts_isothermal(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
+      call ts_isothermal(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      &  sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
     case('Isothermal_2')
       ! Isothermal layers approximation - first order fix for high optical depths
-      call ts_isothermal_2(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
+      call ts_isothermal_2(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
     case('Toon')
       ! Toon method without scattering
-      call ts_Toon(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
+      call ts_Toon(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
     case("Toon_scatter")
       !! In development !!
       ! Toon method with scattering
-      call ts_Toon_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, net_F)
+      call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
     case('Shortchar')
       ! Short characteristics method without scattering
-      call ts_short_char(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
+      call ts_short_char(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, net_Fs)
     case('Heng')
       ! Heng flux method without scattering
       tau_IRl(:) = fl*tau_IRref*(pl(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pl(:)/pref)**2  ! Optical depth at layer midpoints
-      call ts_Heng(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, net_F)
+      call ts_Heng(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, &
+       & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
     case('Lewis_scatter')
       ! Neil Lewis's code with scattering
-      call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, net_F, 1)
-    case('Lewis_scatter_sw')
-      ! Neil Lewis's code with scattering (shortwave only)
-      call ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, net_F, 2)
+      call ts_Lewis_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, net_F, olr)
     case('Disort_scatter')
       ! Two-stream DISORT version
-      call ts_disort_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, net_F)
+      call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
     case('Mendonca')
       !! In development !!
       ! Mendonca method without scattering
-      call ts_Mendonca(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, net_F)
+      call ts_Mendonca(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
     case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)
@@ -261,7 +272,14 @@ program Exo_FMS_RC
     !! Calculate the temperature tendency due to radiation
     do i = 1, nlay
       dT_rad(i) = (grav/cp_air) * (net_F(i+1)-net_F(i))/(dpe(i))
+      !print*, n, i, dT_rad(i)
     end do
+
+    !! Calculate the surface temperature tedency due to radiation
+    if (surf .eqv. .True.) then
+      dTs = net_Fs / (cp_surf)
+    end if
+
 
     !! Convective adjustment scheme
     select case(adj_scheme)
@@ -277,13 +295,20 @@ program Exo_FMS_RC
     !! Forward march the temperature change in each layer from convection and radiation
     Tl(:) = Tl(:) + t_step * (dT_conv(:) + dT_rad(:))
 
+    !! Forward march the temperature change in the surface
+    if (surf .eqv. .True.) then
+      Ts = Ts + t_step * dTs
+    else
+      Ts = 0.0_dp
+    end if
+
     !! Check for NaN's in the temperature and exit the simulation if detected
     do i = 1, nlay
       if (ieee_is_nan(Tl(i)) .eqv. .True.) then
         do j = 1, nlay
           print*, j, Tl(j), net_F(j), dT_rad(j), dT_conv(j)
         end do
-        print*, nlev, net_F(nlev)
+        print*, nlev, net_F(nlev), olr, net_Fs, Ts
         inan = 1
         exit
       end if
@@ -306,6 +331,9 @@ program Exo_FMS_RC
 
   print*, 'For profile properties: '
   print*, Tint, Tirr, pref, mu_z
+
+  print*, 'OLR [W m-2]:'
+  print*, olr
 
   print*, 'Outputting results: '
   open(newunit=u,file='FMS_RC_pp.out', action='readwrite')

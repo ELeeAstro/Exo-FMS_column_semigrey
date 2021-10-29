@@ -32,36 +32,29 @@ module ts_Lewis_scatter_mod
 
 contains
 
-  subroutine ts_Lewis_scatter(nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, lw_a, lw_g, net_F, IR_mode)
+  subroutine ts_Lewis_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+    & sw_a, sw_g, lw_a, lw_g, net_F, olr)
     implicit none
 
     !! Input variables
-    integer, intent(in) :: nlay, nlev, IR_mode
+    logical, intent(in) :: Bezier
+    integer, intent(in) :: nlay, nlev
+    real(dp), intent(in) :: F0, mu_z, Tint, AB
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
     real(dp), dimension(nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
-    real(dp), intent(in) :: F0, mu_z, Tint, AB
 
     !! Output variables
+    real(dp), intent(out) :: olr
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
     integer :: i
     real(dp) :: Finc, be_int
-    real(dp), dimension(nlev) :: Te, be
     real(dp), dimension(nlay) :: bl
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
-
-    !! Find temperature at layer edges through linear interpolation and extrapolation
-    do i = 2, nlay
-      call linear_log_interp(pe(i), pl(i-1), pl(i), Tl(i-1), Tl(i), Te(i))
-      !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
-    end do
-    Te(1) = Tl(1) + (pe(1) - pe(2))/(pl(1) - pe(2)) * (Tl(1) - Te(2))
-    Te(nlev) = Tl(nlay) + (pe(nlev) - pe(nlay))/(pl(nlay) - pe(nlay)) * (Tl(nlay) - Te(nlay))
 
     !! Shortwave flux calculation
     if (mu_z > 0.0_dp) then
@@ -72,22 +65,17 @@ contains
     end if
 
     !! Longwave two-stream flux calculation
-    if (IR_mode == 1) then
-      bl(:) = sb * Tl(:)**4  ! Integrated planck function flux at levels
-      be_int = sb * Tint**4 ! Integrated planck function flux for internal temperature
-      call lw_grey_updown(nlay, nlev, bl, be_int, tau_IRe(:), lw_a(:), lw_g(:), mu_z, lw_up(:), lw_down(:))
-    else if (IR_mode == 2) then
-      !! Longwave two-stream flux calculation
-      be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
-      be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
-      call lw_grey_updown_linear(nlay, nlev, be, be_int, tau_IRe(:), lw_up(:), lw_down(:))
-    end if
-
+    bl(:) = sb * Tl(:)**4  ! Integrated planck function flux at levels
+    be_int = sb * Tint**4 ! Integrated planck function flux for internal temperature
+    call lw_grey_updown(nlay, nlev, bl, be_int, tau_IRe(:), lw_a(:), lw_g(:), mu_z, lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
     net_F(:) = lw_net(:) + sw_net(:)
+
+    !! Output olr
+    olr = lw_up(1)
 
   end subroutine ts_Lewis_scatter
 
@@ -112,7 +100,7 @@ contains
     !! 3/2 closure hemispheric closure condition for g
     gh(:) = g(:) * (3.0_dp/2.0_dp)
 
-    !! Have to compute SW optical depth as per definition in Pierrehumbert (2010)
+    !! Have to compute lw optical depth as per definition in Pierrehumbert (2010)
     do k = 1, nlay
       dtau(k) = -(tau_IR(k+1) - tau_IR(k))
     end do
@@ -154,7 +142,7 @@ contains
 
     gh(:) = g(:) * (3.0_dp/2.0_dp)
 
-    !! Have to compute SW optical depth as per definition in Pierrehumbert (2010)
+    !! Have to compute sw optical depth as per definition in Pierrehumbert (2010)
     do k = 1, nlay
       dtau(k) = -(tau_V(k+1) - tau_V(k))
     end do
@@ -167,16 +155,16 @@ contains
     gamm(:) = 0.5_dp*w0(:) + gam*w0(:)*gh(:)*mu_z
 
     !! Original 1st order method
-    ! direct(1) = mu_z * Finc
-    ! do k = 1, nlay
-    !   direct(k+1) = direct(k) * (2.0_dp*mu_z + dtau(k))/(2.0_dp*mu_z - dtau(k))
-    !   if (direct(k+1) < 0.0_dp) then
-    !     direct(k+1) = 0.0_dp
-    !   end if
-    ! end do
+    direct(1) = mu_z * Finc
+    do k = 1, nlay
+      direct(k+1) = direct(k) * (2.0_dp*mu_z + dtau(k))/(2.0_dp*mu_z - dtau(k))
+      if (direct(k+1) < 0.0_dp) then
+        direct(k+1) = 0.0_dp
+      end if
+    end do
 
     !! Exponential dependent method
-    direct(:) = Finc * mu_z * exp(-tau_V(:)/mu_z)
+    !direct(:) = Finc * mu_z * exp(-tau_V(:)/mu_z)
 
     !!!! Zero blackbody radiation for shortwave !!!!
     b_int = 0.0_dp
@@ -189,88 +177,6 @@ contains
     sw_down(:) = sw_down(:) + direct(:)
 
   end subroutine sw_grey_updown
-
-  subroutine lw_grey_updown_linear(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
-    implicit none
-
-    !! Input variables
-    integer, intent(in) :: nlay, nlev
-    real(dp), dimension(nlev), intent(in) :: be, tau_IRe
-    real(dp), intent(in) :: be_int
-
-    !! Output variables
-    real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
-
-    !! Work variables and arrays
-    integer :: k, m
-    real(dp), dimension(nlay) :: dtau, edel
-    real(dp) :: del, e0i, e1i, e1i_del
-    real(dp), dimension(nlay) :: Am, Bm, Gp, Bp
-    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
-
-    !! Calculate dtau in each layer
-    do k = 1, nlay
-      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
-    end do
-
-    ! Zero the total flux arrays
-    lw_up(:) = 0.0_dp
-    lw_down(:) = 0.0_dp
-
-    !! Start loops to integrate in mu space
-    do m = 1, nmu
-
-      !! Prepare loop
-      do k = 1, nlay
-        ! Olson & Kunasz (1987) linear interpolant parameters
-        del = dtau(k)/uarr(m)
-        edel(k) = exp(-del)
-        e0i = 1.0_dp - edel(k)
-        e1i = del - e0i
-
-        e1i_del = e1i/del ! The equivalent to the linear in tau term
-
-        if (dtau(k) < 1.0e-6_dp) then
-          ! If we are in very low optical depth regime, then use an isothermal approximation
-          Am(k) = (0.5_dp*(be(k+1) + be(k)) * e0i)/be(k)
-          Bm(k) = 0.0_dp
-          Gp(k) = 0.0_dp
-          Bp(k) = Am(k)
-        else
-          Am(k) = e0i - e1i_del ! Am(k) = Gp(k), just indexed differently
-          Bm(k) = e1i_del ! Bm(k) = Bp(k), just indexed differently
-          Gp(k) = Am(k)
-          Bp(k) = Bm(k)
-        end if
-      end do
-
-      !! Begin two-stream loops
-      !! Perform downward loop first
-      ! Top boundary condition - 0 flux downward from top boundary
-      lw_down_g(1) = 0.0_dp
-      do k = 1, nlay
-        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1) ! TS intensity
-      end do
-
-      !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up_g(nlev) = lw_down_g(nlev) + be_int
-      do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
-      end do
-
-      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
-      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
-
-    end do
-
-    !! The flux is the intensity * 2pi
-    lw_down(:) = twopi * lw_down(:)
-    lw_up(:) = twopi * lw_up(:)
-
-  end subroutine lw_grey_updown_linear
 
   subroutine two_stream_solver(nlevels, alpha_g, coszen, pi_B_surf, pi_B,  I_direct, del_tau, gammaone, &
     gammatwo, gammab, gammaplus, gammaminus, I_up, I_down)
@@ -600,14 +506,56 @@ contains
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
-    lxval = log10(xval)
-    lx1 = log10(x1); lx2 = log10(x2)
     ly1 = log10(y1); ly2 = log10(y2)
 
-    norm = 1.0_dp / (lx2 - lx1)
+    norm = 1.0_dp / log10(x2/x1)
 
-    yval = 10.0_dp**((ly1 * (lx2 - lxval) + ly2 * (lxval - lx1)) * norm)
+    yval = 10.0_dp**((ly1 * log10(x2/xval) + ly2 * log10(xval/x1)) * norm)
 
   end subroutine linear_log_interp
+
+  subroutine bezier_interp(xi, yi, ni, x, y)
+    implicit none
+
+    integer, intent(in) :: ni
+    real(dp), dimension(ni), intent(in) :: xi, yi
+    real(dp), intent(in) :: x
+    real(dp), intent(out) :: y
+
+    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+
+    !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
+    dx = xi(2) - xi(1)
+    dx1 = xi(3) - xi(2)
+    dy = yi(2) - yi(1)
+    dy1 = yi(3) - yi(2)
+
+    if (x > xi(1) .and. x < xi(2)) then
+      ! left hand side interpolation
+      !print*,'left'
+      w = dx1/(dx + dx1)
+      !wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      !wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      !if (w < wlim .or. w > wlim1) then
+      !  w = 1.0_dp
+      !end if
+      yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
+      t = (x - xi(1))/dx
+      y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
+    else ! (x > xi(2) and x < xi(3)) then
+      ! right hand side interpolation
+      !print*,'right'
+      w = dx/(dx + dx1)
+      !wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      !wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      !if (w < wlim .or. w > wlim1) then
+      !  w = 1.0_dp
+      !end if
+      yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
+      t = (x - xi(2))/(dx1)
+      y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
+    end if
+
+  end subroutine bezier_interp
 
 end module ts_Lewis_scatter_mod

@@ -13,7 +13,8 @@ module IC_mod
 
 contains
 
-  subroutine IC_profile(iIC,corr,nlay,p0,pl,k_V,k_IR,Tint,mu,Tirr,grav,fl,Tl,prc)
+  subroutine IC_profile(iIC,corr,nlay,p0,pl,k_V,k_IR,Tint,mu,Tirr,grav,fl,Tl,prc, &
+    & Ts_init, Tstrat_init, kappa)
     implicit none
 
     !! Input flags
@@ -22,7 +23,7 @@ contains
 
     !! Input quantities
     integer, intent(in) :: nlay
-    real(dp), intent(in) :: p0, Tint, mu, Tirr, grav, fl
+    real(dp), intent(in) :: p0, Tint, mu, Tirr, grav, fl, Ts_init, Tstrat_init, kappa
     real(dp), dimension(nlay), intent(in) :: pl
     real(dp), dimension(nlay), intent(in) :: k_V, k_IR
 
@@ -49,6 +50,8 @@ contains
       ! Mayne et al. (2014) IC - check the iprof parameter in the subroutine
       ! for then dayside/nightside switch
       call Mayne_2014_IC(nlay,pl,Tl)
+    case(6)
+      call dry_adiabat(nlay,p0,pl,Ts_init,Tstrat_init,kappa,Tl)
     case default
       print*, 'Invalid IC integer in IC_mod, stopping'
       stop
@@ -63,6 +66,20 @@ contains
     end if
 
   end subroutine IC_profile
+
+  subroutine dry_adiabat(nlay,p0,pl,Ts,Tstrat,kappa,Tl)
+    implicit none
+
+    integer, intent(in) :: nlay
+    real(dp), intent(in) :: p0, Ts, Tstrat, kappa
+    real(dp), dimension(nlay), intent(in) :: pl
+
+    real(dp), dimension(nlay), intent(out) :: Tl
+
+    Tl(:) = Ts * (pl(:)/p0)**kappa
+    Tl(:) = max(Tl(:), Tstrat)
+
+  end subroutine dry_adiabat
 
   subroutine Iso_IC(nlay,Tint,Tl)
     implicit none
