@@ -226,8 +226,8 @@ program Exo_FMS_RC
     select case(ts_scheme)
     case('Isothermal')
       ! Isothermal layers approximation
-      call ts_isothermal(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      &  sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+      call ts_isothermal(surf, nlay, nlev, Ts, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, net_Fs)
     case('Isothermal_2')
       ! Isothermal layers approximation - first order fix for high optical depths
       call ts_isothermal_2(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
@@ -334,6 +334,9 @@ program Exo_FMS_RC
 
   print*, 'OLR [W m-2]:'
   print*, olr
+
+  print*, 'Surface T: '
+  print*, Ts
 
   print*, 'Outputting results: '
   open(newunit=u,file='FMS_RC_pp.out', action='readwrite')

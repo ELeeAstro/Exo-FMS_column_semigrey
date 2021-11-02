@@ -23,19 +23,20 @@ module ts_isothermal_mod
 
 contains
 
-  subroutine ts_isothermal(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+  subroutine ts_isothermal(surf, nlay, nlev, Ts, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+  & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, net_Fs)
     implicit none
 
-    !! Input variables
+    !! Input variables\
+    logical, intent(in) :: surf
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0, mu_z, Tint, AB, sw_a_surf
+    real(dp), intent(in) :: F0, mu_z, Tint, AB, sw_a_surf, lw_a_surf, Ts
     real(dp), dimension(nlay), intent(in) :: Tl
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
     real(dp), dimension(nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
 
     !! Output variables
-    real(dp), intent(out) :: olr
+    real(dp), intent(out) :: olr, net_Fs
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
@@ -56,13 +57,21 @@ contains
 
     !! Longwave two-stream flux calculation
     bl(:) = sb * Tl(:)**4  ! Integrated planck function flux at layers
-    be_int = sb * Tint**4 ! Integrated planck function flux for internal temperature
-    call lw_grey_updown(nlay, nlev, bl, be_int, tau_IRe(:), lw_up(:), lw_down(:))
+    if (surf .eqv. .True.) then
+      be_int = (sb * Ts**4)/pi
+    else
+      be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
+    end if
+    call lw_grey_updown(surf, nlay, nlev, bl, be_int, tau_IRe(:), lw_a_surf, lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
     net_F(:) = lw_net(:) + sw_net(:)
+
+    !! Net surface flux (for surface temperature evolution)
+    !! We have to define positive as downward (heating) and cooling (upward) in this case
+    net_Fs = sw_down(nlev) + lw_down(nlev) - lw_up(nlev)
 
     !! Ouput olr
     olr = lw_up(1)
@@ -96,16 +105,19 @@ contains
     w(1:nlay) = w_in(:)
     g(1:nlay) = g_in(:)
 
-    w(nlev) = w_surf
+    w(nlev) = 0.0_dp
     g(nlev) = 0.0_dp
 
-
-    ! If zero albedo across all layers then return direct beam only
+    ! If zero albedo across all atmospheric layers then return direct beam only
     if (all(w(:) == 0.0_dp)) then
       sw_down(:) = Finc * mu_z * exp(-tau_Ve(:)/mu_z)
-      sw_up(:) = 0.0_dp
+      sw_down(nlev) = sw_down(nlev) * (1.0_dp - w_surf) ! The surface flux for surface heating is the amount of flux absorbed by surface
+      sw_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
       return
     end if
+
+    w(nlev) = w_surf
+    g(nlev) = 0.0_dp
 
     ! Backscattering approximation
     f(:) = g(:)**2
@@ -171,12 +183,13 @@ contains
 
   end subroutine sw_grey_updown_adding
 
-  subroutine lw_grey_updown(nlay, nlev, bl, be_int, tau_IRe, lw_up, lw_down)
+  subroutine lw_grey_updown(surf, nlay, nlev, bl, be_int, tau_IRe, lw_a_surf, lw_up, lw_down)
     implicit none
 
     !! Input variables
+    logical, intent(in) :: surf
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: be_int
+    real(dp), intent(in) :: be_int, lw_a_surf
     real(dp), dimension(nlev), intent(in) :: tau_IRe
     real(dp), dimension(nlay), intent(in) :: bl
 
@@ -201,8 +214,15 @@ contains
     end do
 
     !! Perform upward loop
-    ! Lower boundary condition - internal heat definition Fint = F_up - F_down
-    lw_up(nlev) = lw_down(nlev) + be_int
+    if (surf .eqv. .True.) then
+      ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+      lw_up(nlev) = lw_down(nlev)*lw_a_surf + be_int
+    else
+      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+      ! here the lw_a_surf is assumed to be = 1 as per the definition
+      ! here we use the same condition but use intensity units to be consistent
+      lw_up(nlev) = lw_down(nlev) + be_int
+    end if
     do k = nlay, 1, -1
       lw_up(k) = lw_up(k+1)*Tp(k) + B0(k)*(1.0_dp - Tp(k))
     end do
