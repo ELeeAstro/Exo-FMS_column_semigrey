@@ -58,9 +58,9 @@ contains
     !! Longwave two-stream flux calculation
     bl(:) = sb * Tl(:)**4  ! Integrated planck function flux at layers
     if (surf .eqv. .True.) then
-      be_int = (sb * Ts**4)/pi
+      be_int = (sb * Ts**4)
     else
-      be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
+      be_int = (sb * Tint**4) ! Integrated planck function intensity for internal temperature
     end if
     call lw_grey_updown(surf, nlay, nlev, bl, be_int, tau_IRe(:), lw_a_surf, lw_up(:), lw_down(:))
 
@@ -223,6 +223,7 @@ contains
       ! here we use the same condition but use intensity units to be consistent
       lw_up(nlev) = lw_down(nlev) + be_int
     end if
+    
     do k = nlay, 1, -1
       lw_up(k) = lw_up(k+1)*Tp(k) + B0(k)*(1.0_dp - Tp(k))
     end do

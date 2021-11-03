@@ -335,7 +335,7 @@ program Exo_FMS_RC
   print*, 'OLR [W m-2]:'
   print*, olr
 
-  print*, 'Surface T: '
+  print*, 'Surface T [K]: '
   print*, Ts
 
   print*, 'Outputting results: '
