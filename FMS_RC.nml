@@ -1,6 +1,6 @@
 &FMS_RC_nml
 
-ts_scheme = 'Mendonca'
+ts_scheme = 'Shortchar'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 
