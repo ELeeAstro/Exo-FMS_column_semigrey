@@ -53,7 +53,6 @@ ts_scheme: \
 'Shortchar' -  Short characteristics method \
 'Heng' - Heng et al. method \
 'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
-'Lewis_scatter_sw' - 'Lewis' but only shortwave scattering ('Shortchar' for IR) \
 'Mendonca' - Mendonca et al. method \
 'Disort_scatter' - two-stream DISORT version with scattering
 
