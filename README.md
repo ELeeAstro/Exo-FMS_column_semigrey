@@ -102,8 +102,8 @@ nl - Longwave power index (For Heng opacities)
 surf - solid surface is present (.True.) \
 Ts_init - initial temperature of surface \
 Tstrat_init - inital temperautre of stratosphere \
-cp_surf - surface areal heat capacity
-sw_a_surf - shortwave surface albedo
+cp_surf - surface areal heat capacity \
+sw_a_surf - shortwave surface albedo \
 lw_a_surf - longwave surface albedo
 
 # Plotting results
