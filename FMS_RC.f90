@@ -52,7 +52,7 @@ program Exo_FMS_RC
   logical :: corr
   real(dp) :: prc
 
-  real(dp) :: fl, AB, olr, Ts, dTs, net_Fs
+  real(dp) :: fl, AB, olr, asr, Ts, dTs, net_Fs
 
   logical :: surf
   real(dp) :: Ts_init, sw_a_surf, cp_surf, Tstrat_init, lw_a_surf, ns, nl
@@ -227,42 +227,41 @@ program Exo_FMS_RC
     case('Isothermal')
       ! Isothermal layers approximation
       call ts_isothermal(surf, nlay, nlev, Ts, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, net_Fs)
+      & sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     case('Isothermal_2')
       ! Isothermal layers approximation - first order fix for high optical depths
-      call ts_isothermal_2(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+      call ts_isothermal_2(surf, nlay, nlev, Ts, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     case('Toon')
-      ! Toon method without scattering
+      ! Toon method without LW scattering
       call ts_Toon(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+      & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     case("Toon_scatter")
       !! In development !!
-      ! Toon method with scattering
+      ! Toon method with SW/LW scattering
       call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
     case('Shortchar')
-      ! Short characteristics method without scattering
-      call ts_short_char(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, net_Fs)
+      ! Short characteristics method without LW scattering
+      call ts_short_char(Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     case('Heng')
-      ! Heng flux method without scattering
+      ! Heng flux method without LW scattering
       tau_IRl(:) = fl*tau_IRref*(pl(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pl(:)/pref)**2  ! Optical depth at layer midpoints
       call ts_Heng(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, &
-       & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+       & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     case('Lewis_scatter')
-      ! Neil Lewis's code with scattering
-      call ts_Lewis_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, net_F, olr)
+      ! Neil Lewis's code with SW/LW scattering
+      call ts_Lewis_scatter(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     case('Disort_scatter')
-      ! Two-stream DISORT version
+      ! Two-stream DISORT version ()with SW/LW scattering)
       call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr, asr)
     case('Mendonca')
-      !! In development !!
-      ! Mendonca method without scattering
-      call ts_Mendonca(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+      ! Mendonca method without LW scattering
+      call ts_Mendonca(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)
@@ -334,6 +333,9 @@ program Exo_FMS_RC
 
   print*, 'OLR [W m-2]:'
   print*, olr
+
+  print*, 'ASR [W m-2]:'
+  print*, asr
 
   print*, 'Surface T [K]: '
   print*, Ts

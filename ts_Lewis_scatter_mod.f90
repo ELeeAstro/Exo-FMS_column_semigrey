@@ -17,36 +17,27 @@ module ts_Lewis_scatter_mod
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  !! Legendre quadrature for 2 nodes
-  integer, parameter :: nmu = 2
-  real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
-  real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
-  real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
-
   real(dp), parameter :: gam = 1.0_dp ! associated with closure for integrating over all angles
   real(dp), parameter :: gamprime = 1.0_dp
 
   public :: ts_Lewis_scatter
-  private :: lw_grey_updown, sw_grey_updown, linear_log_interp
+  private :: lw_grey_updown, sw_grey_updown
 
 contains
 
-  subroutine ts_Lewis_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, lw_a, lw_g, net_F, olr)
+  subroutine ts_Lewis_scatter(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+    & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     implicit none
 
     !! Input variables
-    logical, intent(in) :: Bezier
     integer, intent(in) :: nlay, nlev
     real(dp), intent(in) :: F0, mu_z, Tint, AB
-    real(dp), dimension(nlay), intent(in) :: Tl, pl
-    real(dp), dimension(nlev), intent(in) :: pe
+    real(dp), dimension(nlay), intent(in) :: Tl
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
     real(dp), dimension(nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
 
     !! Output variables
-    real(dp), intent(out) :: olr
+    real(dp), intent(out) :: olr, asr
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
@@ -58,7 +49,8 @@ contains
 
     !! Shortwave flux calculation
     if (mu_z > 0.0_dp) then
-      call sw_grey_updown(nlay, nlev, F0, tau_Ve(:), sw_a(:), sw_g(:), mu_z, sw_up(:), sw_down(:))
+      Finc = (1.0_dp - AB) * F0
+      call sw_grey_updown(nlay, nlev, Finc, tau_Ve(:), sw_a(:), sw_g(:), mu_z, sw_up(:), sw_down(:))
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -76,6 +68,9 @@ contains
 
     !! Output olr
     olr = lw_up(1)
+
+    !! Output asr
+    asr = sw_down(1) - sw_up(1)
 
   end subroutine ts_Lewis_scatter
 
@@ -496,66 +491,5 @@ contains
   CALL DAXPY(LM,T,A(LA,K),X(LB))
   ENDDO
   END SUBROUTINE NSBSLV
-
-  ! Perform linear interpolation in log10 space
-  subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)
-    implicit none
-
-    real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: lxval, ly1, ly2, lx1, lx2
-    real(dp), intent(out) :: yval
-    real(dp) :: norm
-
-    ly1 = log10(y1); ly2 = log10(y2)
-
-    norm = 1.0_dp / log10(x2/x1)
-
-    yval = 10.0_dp**((ly1 * log10(x2/xval) + ly2 * log10(xval/x1)) * norm)
-
-  end subroutine linear_log_interp
-
-  subroutine bezier_interp(xi, yi, ni, x, y)
-    implicit none
-
-    integer, intent(in) :: ni
-    real(dp), dimension(ni), intent(in) :: xi, yi
-    real(dp), intent(in) :: x
-    real(dp), intent(out) :: y
-
-    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
-
-    !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
-    dx = xi(2) - xi(1)
-    dx1 = xi(3) - xi(2)
-    dy = yi(2) - yi(1)
-    dy1 = yi(3) - yi(2)
-
-    if (x > xi(1) .and. x < xi(2)) then
-      ! left hand side interpolation
-      !print*,'left'
-      w = dx1/(dx + dx1)
-      !wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
-      yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
-      t = (x - xi(1))/dx
-      y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
-    else ! (x > xi(2) and x < xi(3)) then
-      ! right hand side interpolation
-      !print*,'right'
-      w = dx/(dx + dx1)
-      !wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
-      yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
-      t = (x - xi(2))/(dx1)
-      y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
-    end if
-
-  end subroutine bezier_interp
 
 end module ts_Lewis_scatter_mod

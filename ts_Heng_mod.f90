@@ -1,9 +1,12 @@
 !!!
-! Elspeth KH Lee - May 2021
-! Two-stream method following Heng et al. papers
-! We follow the Malik et al. (2017) method using sub-layers to calculate midpoint fluxes
-! Pros: Easy to understand and convert from theory, no mu integration, variable diffusive factor
-! Cons: Slower than other methods (uses sub-layers and eone calculations), no scattering
+! Elspeth KH Lee - May 2021 : Initial version
+!                - Dec 2021 : adding method & Bezier interpolation
+! sw: Adding layer method with scattering
+! lw: Two-stream method following Heng et al. papers
+!     We follow the Malik et al. (2017) method using sub-layers to calculate midpoint fluxes
+!     Pros: Easy to understand and convert from theory, no mu integration, variable diffusive factor
+!     Cons: Slower than other methods (uses sub-layers and eone calculations), no scattering
+!     NOTE: Various ways to calculate the diffusion factor as function of optical depth
 !!!
 
 module ts_Heng_mod
@@ -30,7 +33,7 @@ module ts_Heng_mod
 contains
 
   subroutine ts_Heng(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, tau_IRl, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+    & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     implicit none
 
     !! Input variables
@@ -40,10 +43,10 @@ contains
     real(dp), dimension(nlay), intent(in) :: Tl, pl, tau_IRl
     real(dp), dimension(nlev), intent(in) :: pe
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
-    real(dp), dimension(nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
+    real(dp), dimension(nlay), intent(in) :: sw_a, sw_g
 
     !! Output variables
-    real(dp),  intent(out) :: olr
+    real(dp),  intent(out) :: olr, asr
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
@@ -97,110 +100,10 @@ contains
     !! Output olr
     olr = lw_up(1)
 
+    !! Output asr
+    asr = sw_down(1) - sw_up(1)
+
   end subroutine ts_Heng
-
-
-  subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
-    implicit none
-
-    !! Input variables
-    integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: Finc, mu_z, w_surf
-    real(dp), dimension(nlev), intent(in) :: tau_Ve
-    real(dp), dimension(nlay), intent(in) :: w_in, g_in
-
-    !! Output variables
-    real(dp), dimension(nlev), intent(out) :: sw_down, sw_up
-
-    !! Work variables
-    integer :: k
-    real(dp) :: lamtau, e_lamtau, lim, arg, apg, amg
-    real(dp), dimension(nlev) ::  w, g, f
-    real(dp), dimension(nlev) :: tau_Ve_s
-    real(dp), dimension(nlay) :: tau
-    real(dp), dimension(nlay) :: tau_s, w_s, f_s, g_s
-    real(dp), dimension(nlev) :: lam, u, N, gam, alp
-    real(dp), dimension(nlev) :: R_b, T_b, R, T
-    real(dp), dimension(nlev) :: Tf
-
-    ! Design w and g to include surface property level
-    w(1:nlay) = w_in(:)
-    g(1:nlay) = g_in(:)
-
-    w(nlev) = w_surf
-    g(nlev) = 0.0_dp
-
-
-    ! If zero albedo across all layers then return direct beam only
-    if (all(w(:) == 0.0_dp)) then
-      sw_down(:) = Finc * mu_z * exp(-tau_Ve(:)/mu_z)
-      sw_up(:) = 0.0_dp
-      return
-    end if
-
-    ! Backscattering approximation
-    f(:) = g(:)**2
-
-    !! Do optical depth rescaling
-    tau_Ve_s(1) = tau_Ve(1)
-    do k = 1, nlay
-      tau(k) = tau_Ve(k+1) - tau_Ve(k)
-      tau_s(k) = tau(k) * (1.0_dp - w(k)*f(k))
-      tau_Ve_s(k+1) = tau_Ve_s(k) + tau_s(k)
-    end do
-
-    do k = 1, nlev
-
-      w_s(k) = w(k) * ((1.0_dp - f(k))/(1.0_dp - w(k)*f(k)))
-      g_s(k) = (g(k) - f(k))/(1.0_dp - f(k))
-      lam(k) = sqrt(3.0_dp*(1.0_dp - w_s(k))*(1.0_dp - w_s(k)*g_s(k)))
-      gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z**2)/(1.0_dp - lam(k)**2*mu_z**2)
-      alp(k) = 0.75_dp * w_s(k) * mu_z * (1.0_dp + g_s(k)*(1.0_dp - w_s(k)))/(1.0_dp - lam(k)**2*mu_z**2)
-      u(k) = (3.0_dp/2.0_dp) * ((1.0_dp - w_s(k)*g_s(k))/lam(k))
-
-      lamtau = min(lam(k)*tau_Ve_s(k),99.0_dp)
-      e_lamtau = exp(-lamtau)
-
-      N(k) = (u(k) + 1.0_dp)**2 * 1.0_dp/e_lamtau - (u(k) - 1.0_dp)**2  * e_lamtau
-
-      R_b(k) = (u(k) + 1.0_dp)*(u(k) - 1.0_dp)*(1.0_dp/e_lamtau - e_lamtau)/N(k)
-      T_b(k) = 4.0_dp * u(k)/N(k)
-
-      arg = min(tau_Ve_s(k)/mu_z,99.0_dp)
-      Tf(k) = exp(-arg)
-
-      apg = alp(k) + gam(k)
-      amg = alp(k) - gam(k)
-
-      R(k) = amg*(T_b(k)*Tf(k) - 1.0_dp) + apg*R_b(k)
-
-      T(k) = apg*T_b(k) + (amg*R_b(k) - (apg - 1.0_dp))*Tf(k)
-
-      R(k) = max(R(k), 0.0_dp)
-      T(k) = max(T(k), 0.0_dp)
-      R_b(k) = max(R_b(k), 0.0_dp)
-      T_b(k) = max(T_b(k), 0.0_dp)
-
-    end do
-
-    !! Calculate downward flux
-    do k = 1, nlay
-      sw_down(k) = Tf(k) + ((T(k) - Tf(k)) +  &
-      & Tf(k)*R(k+1)*R_b(k))/(1.0_dp - R_b(k)*R_b(k+1))
-    end do
-    sw_down(nlev) = Tf(nlev)
-
-    !! Calculate upward flux
-    do k = 1, nlay
-      sw_up(k) = (Tf(k)*R(k+1) + (T(k) - Tf(k))*R_b(k+1))/(1.0_dp - R_b(k)*R_b(k+1))
-    end do
-    sw_up(nlev) = sw_down(nlev) * w_surf
-
-    !! Scale with the incident flux
-    sw_down(:) = sw_down(:) * mu_z * Finc
-    sw_up(:) = sw_up(:) * mu_z * Finc
-
-  end subroutine sw_grey_updown_adding
 
   subroutine lw_grey_updown(nlay, nlev, be, bl, be_int, tau_IRe, tau_IRl, lw_up, lw_down)
     implicit none
@@ -301,6 +204,111 @@ contains
     end do
 
   end subroutine lw_grey_updown
+
+  subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
+    implicit none
+
+    !! Input variables
+    integer, intent(in) :: nlay, nlev
+    real(dp), intent(in) :: Finc, mu_z, w_surf
+    real(dp), dimension(nlev), intent(in) :: tau_Ve
+    real(dp), dimension(nlay), intent(in) :: w_in, g_in
+
+    !! Output variables
+    real(dp), dimension(nlev), intent(out) :: sw_down, sw_up
+
+    !! Work variables
+    integer :: k
+    real(dp) :: lamtau, e_lamtau, lim, arg, apg, amg
+    real(dp), dimension(nlev) ::  w, g, f
+    real(dp), dimension(nlev) :: tau_Ve_s
+    real(dp), dimension(nlay) :: tau
+    real(dp), dimension(nlev) :: tau_s, w_s, f_s, g_s
+    real(dp), dimension(nlev) :: lam, u, N, gam, alp
+    real(dp), dimension(nlev) :: R_b, T_b, R, T
+    real(dp), dimension(nlev) :: Tf
+
+    ! Design w and g to include surface property level
+    w(1:nlay) = w_in(:)
+    g(1:nlay) = g_in(:)
+
+    w(nlev) = 0.0_dp
+    g(nlev) = 0.0_dp
+
+    ! If zero albedo across all atmospheric layers then return direct beam only
+    if (all(w(:) <= 1.0e-12_dp)) then
+      sw_down(:) = Finc * mu_z * exp(-tau_Ve(:)/mu_z)
+      sw_down(nlev) = sw_down(nlev) * (1.0_dp - w_surf) ! The surface flux for surface heating is the amount of flux absorbed by surface
+      sw_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
+      return
+    end if
+
+    w(nlev) = w_surf
+    g(nlev) = 0.0_dp
+
+    ! Backscattering approximation
+    f(:) = g(:)**2
+
+    !! Do optical depth rescaling
+    tau_Ve_s(1) = tau_Ve(1)
+    do k = 1, nlay
+      tau(k) = tau_Ve(k+1) - tau_Ve(k)
+      tau_s(k) = tau(k) * (1.0_dp - w(k)*f(k))
+      tau_Ve_s(k+1) = tau_Ve_s(k) + tau_s(k)
+    end do
+
+    do k = 1, nlev
+
+      w_s(k) = w(k) * ((1.0_dp - f(k))/(1.0_dp - w(k)*f(k)))
+      g_s(k) = (g(k) - f(k))/(1.0_dp - f(k))
+      lam(k) = sqrt(3.0_dp*(1.0_dp - w_s(k))*(1.0_dp - w_s(k)*g_s(k)))
+      gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z**2)/(1.0_dp - lam(k)**2*mu_z**2)
+      alp(k) = 0.75_dp * w_s(k) * mu_z * (1.0_dp + g_s(k)*(1.0_dp - w_s(k)))/(1.0_dp - lam(k)**2*mu_z**2)
+      u(k) = (3.0_dp/2.0_dp) * ((1.0_dp - w_s(k)*g_s(k))/lam(k))
+
+      lamtau = min(lam(k)*tau_Ve_s(k),99.0_dp)
+      e_lamtau = exp(-lamtau)
+
+      N(k) = (u(k) + 1.0_dp)**2 * 1.0_dp/e_lamtau - (u(k) - 1.0_dp)**2  * e_lamtau
+
+      R_b(k) = (u(k) + 1.0_dp)*(u(k) - 1.0_dp)*(1.0_dp/e_lamtau - e_lamtau)/N(k)
+      T_b(k) = 4.0_dp * u(k)/N(k)
+
+      arg = min(tau_Ve_s(k)/mu_z,99.0_dp)
+      Tf(k) = exp(-arg)
+
+      apg = alp(k) + gam(k)
+      amg = alp(k) - gam(k)
+
+      R(k) = amg*(T_b(k)*Tf(k) - 1.0_dp) + apg*R_b(k)
+
+      T(k) = apg*T_b(k) + (amg*R_b(k) - (apg - 1.0_dp))*Tf(k)
+
+      R(k) = max(R(k), 0.0_dp)
+      T(k) = max(T(k), 0.0_dp)
+      R_b(k) = max(R_b(k), 0.0_dp)
+      T_b(k) = max(T_b(k), 0.0_dp)
+
+    end do
+
+    !! Calculate downward flux
+    do k = 1, nlay
+      sw_down(k) = Tf(k) + ((T(k) - Tf(k)) +  &
+      & Tf(k)*R(k+1)*R_b(k))/(1.0_dp - R_b(k)*R_b(k+1))
+    end do
+    sw_down(nlev) = Tf(nlev)
+
+    !! Calculate upward flux
+    do k = 1, nlay
+      sw_up(k) = (Tf(k)*R(k+1) + (T(k) - Tf(k))*R_b(k+1))/(1.0_dp - R_b(k)*R_b(k+1))
+    end do
+    sw_up(nlev) = sw_down(nlev) * w_surf
+
+    !! Scale with the incident flux
+    sw_down(:) = sw_down(:) * mu_z * Finc
+    sw_up(:) = sw_up(:) * mu_z * Finc
+
+  end subroutine sw_grey_updown_adding
 
   function e1_ap(dtau) result(e1)
     implicit none

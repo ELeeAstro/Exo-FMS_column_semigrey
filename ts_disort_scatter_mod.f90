@@ -1,8 +1,9 @@
 !!!
-! Elspeth KH Lee - May 2021
-! Two-stream DISORT version, modified by Xianyu Tan to include an internal heat source.
-! Pros: Stable, performs accurate scattering calculations tried and tested, reliable model.
-! Cons: Slower than other methods.
+! Elspeth KH Lee - May 2021 : Initial version
+!                - Dec 2021 : Bezier interpolation
+! sw/lw: Two-stream DISORT version, modified by Xianyu Tan to include an internal heat source.
+!        Pros: Stable, performs accurate scattering calculations tried and tested, reliable model.
+!        Cons: Slower than other methods.
 !!!
 
 module ts_disort_scatter_mod
@@ -18,7 +19,7 @@ module ts_disort_scatter_mod
 contains
 
   subroutine ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr, asr)
     implicit none
 
     !! Input variables
@@ -31,7 +32,7 @@ contains
     real(dp), dimension(nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
 
     !! Output variables
-    real(dp), intent(out) :: olr
+    real(dp), intent(out) :: olr, asr
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
@@ -75,7 +76,7 @@ contains
       planck = .False.
       gg(1:nlay) = sw_g(:)
       ssalb(1:nlay) = sw_a(:)
-      fbeam = F0
+      fbeam = (1.0_dp - AB) * F0
       umu0 = mu_z
       wvnmlo = 0.0_dp
       wvnmhi = 1.0e7_dp
@@ -104,6 +105,9 @@ contains
 
     !! Net fluxes at each level
     net_F(:) = lw_net(1:nlev) + sw_net(1:nlev)
+
+    !! Note sure how to calculate yet
+    asr = 0.0_dp
 
   end subroutine ts_disort_scatter
 

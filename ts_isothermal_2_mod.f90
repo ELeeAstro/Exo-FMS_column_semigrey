@@ -1,8 +1,10 @@
 !!!
-! Elspeth KH Lee - May 2021
-! Two-stream method following the isothermal layer approximation
-! Pros: Very fast, better at high optical depths than 1st isothermal method
-! Cons: Worse at low optical depth, worse at lower internal temperatures
+! Elspeth KH Lee - May 2021 : Initial version
+!                - Dec 2021 : adding method
+! sw: Adding layer method with scattering
+! lw: Two-stream method following the isothermal layer approximation
+!      Pros: Very fast, better at high optical depths than 1st isothermal method
+!      Cons: Worse at low optical depth, worse at lower internal temperatures
 !!!
 
 module ts_isothermal_2_mod
@@ -21,20 +23,21 @@ module ts_isothermal_2_mod
 
 contains
 
-  subroutine ts_isothermal_2(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+  subroutine ts_isothermal_2(surf, nlay, nlev, Ts,  Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+    & sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     implicit none
 
     !! Input variables
+    logical, intent(in) :: surf
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0, mu_z, Tint, AB, sw_a_surf
+    real(dp), intent(in) :: F0, mu_z, Tint, AB, sw_a_surf, lw_a_surf, Ts
     real(dp), dimension(nlay), intent(in) :: Tl
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
-    real(dp), dimension(nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
+    real(dp), dimension(nlay), intent(in) :: sw_a, sw_g
 
 
     !! Output variables
-    real(dp), intent(out) :: olr
+    real(dp), intent(out) :: olr, asr, net_Fs
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
@@ -55,18 +58,76 @@ contains
 
     !! Longwave two-stream flux calculation
     bl(:) = sb * Tl(:)**4  ! Integrated planck function flux at layers
-    be_int = sb * Tint**4 ! Integrated planck function flux for internal temperature
-    call lw_grey_updown(nlay, nlev, bl, be_int, tau_IRe(:), lw_up(:), lw_down(:))
+    if (surf .eqv. .True.) then
+      be_int = sb * Ts**4
+    else
+      be_int = sb * Tint**4 ! Integrated planck function intensity for internal temperature
+    end if
+    call lw_grey_updown(surf, nlay, nlev, bl, be_int, tau_IRe(:), lw_a_surf, lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
     net_F(:) = lw_net(:) + sw_net(:)
 
+    !! Net surface flux (for surface temperature evolution)
+    !! We have to define positive as downward (heating) and cooling (upward) in this case
+    net_Fs = sw_down(nlev) + lw_down(nlev) - lw_up(nlev)
+
     !! Outut olr
     olr = lw_up(1)
 
+    !! Output asr
+    asr = sw_down(1) - sw_up(1)
+
   end subroutine ts_isothermal_2
+
+  subroutine lw_grey_updown(surf, nlay, nlev, bl, be_int, tau_IRe, lw_a_surf, lw_up, lw_down)
+    implicit none
+
+    !! Input variables
+    logical, intent(in) :: surf
+    integer, intent(in) :: nlay, nlev
+    real(dp), intent(in) :: be_int, lw_a_surf
+    real(dp), dimension(nlev), intent(in) :: tau_IRe
+    real(dp), dimension(nlay), intent(in) :: bl
+
+    !! Output variables
+    real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
+
+    !! Work variables and arrays
+    integer :: k
+    real(dp), dimension(nlay) :: dtau
+
+    !! Prepare loop
+    do k = 1, nlay
+      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
+    end do
+
+    !! First do the downward loop
+    lw_down(1) = 0.0_dp
+    do k = 1, nlay
+       lw_down(k+1) = (2.0_dp * bl(k) * dtau(k))/(2.0_dp + dtau(k)) + &
+       & lw_down(k) * (2.0_dp - dtau(k))/(2.0_dp + dtau(k))
+    end do
+
+    !! Perform upward loop
+    if (surf .eqv. .True.) then
+      ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+      lw_up(nlev) = lw_down(nlev)*lw_a_surf + be_int
+    else
+      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+      ! here the lw_a_surf is assumed to be = 1 as per the definition
+      ! here we use the same condition but use intensity units to be consistent
+      lw_up(nlev) = lw_down(nlev) + be_int
+    end if
+    do k = nlay, 1, -1
+      lw_up(k) = (2.0_dp * bl(k) * dtau(k))/(2.0_dp + dtau(k)) + &
+      & lw_up(k+1) * (2.0_dp - dtau(k))/(2.0_dp + dtau(k))
+    end do
+
+
+  end subroutine lw_grey_updown
 
   subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
@@ -86,7 +147,7 @@ contains
     real(dp), dimension(nlev) ::  w, g, f
     real(dp), dimension(nlev) :: tau_Ve_s
     real(dp), dimension(nlay) :: tau
-    real(dp), dimension(nlay) :: tau_s, w_s, f_s, g_s
+    real(dp), dimension(nlev) :: tau_s, w_s, f_s, g_s
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
     real(dp), dimension(nlev) :: R_b, T_b, R, T
     real(dp), dimension(nlev) :: Tf
@@ -95,15 +156,19 @@ contains
     w(1:nlay) = w_in(:)
     g(1:nlay) = g_in(:)
 
-    w(nlev) = w_surf
+    w(nlev) = 0.0_dp
     g(nlev) = 0.0_dp
 
-    ! If zero albedo across all layers then return direct beam only
-    if (all(w(:) == 0.0_dp)) then
+    ! If zero albedo across all atmospheric layers then return direct beam only
+    if (all(w(:) <= 1.0e-12_dp)) then
       sw_down(:) = Finc * mu_z * exp(-tau_Ve(:)/mu_z)
-      sw_up(:) = 0.0_dp
+      sw_down(nlev) = sw_down(nlev) * (1.0_dp - w_surf) ! The surface flux for surface heating is the amount of flux absorbed by surface
+      sw_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
       return
     end if
+
+    w(nlev) = w_surf
+    g(nlev) = 0.0_dp
 
     ! Backscattering approximation
     f(:) = g(:)**2
@@ -168,45 +233,5 @@ contains
     sw_up(:) = sw_up(:) * mu_z * Finc
 
   end subroutine sw_grey_updown_adding
-
-  subroutine lw_grey_updown(nlay, nlev, bl, be_int, tau_IRe, lw_up, lw_down)
-    implicit none
-
-    !! Input variables
-    integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: be_int
-    real(dp), dimension(nlev), intent(in) :: tau_IRe
-    real(dp), dimension(nlay), intent(in) :: bl
-
-    !! Output variables
-    real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
-
-    !! Work variables and arrays
-    integer :: k
-    real(dp), dimension(nlay) :: dtau, B0
-
-    !! Prepare loop
-    do k = 1, nlay
-      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
-      B0(k) = bl(k) ! Layer average planck flux (isothermal approximation)
-    end do
-
-    !! First do the downward loop
-    lw_down(1) = 0.0_dp
-    do k = 1, nlay
-       lw_down(k+1) = (2.0_dp * B0(k) * dtau(k))/(2.0_dp + dtau(k)) + &
-       & lw_down(k) * (2.0_dp - dtau(k))/(2.0_dp + dtau(k))
-    end do
-
-    !! Perform upward loop
-    ! Lower boundary condition - internal heat definition Fint = F_up - F_down
-    lw_up(nlev) = lw_down(nlev) + be_int
-    do k = nlay, 1, -1
-      lw_up(k) = (2.0_dp * B0(k) * dtau(k))/(2.0_dp + dtau(k)) + &
-      & lw_up(k+1) * (2.0_dp - dtau(k))/(2.0_dp + dtau(k))
-    end do
-
-
-  end subroutine lw_grey_updown
 
 end module ts_isothermal_2_mod

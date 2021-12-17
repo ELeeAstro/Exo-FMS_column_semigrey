@@ -62,21 +62,21 @@ module ts_short_char_mod
 
 contains
 
-  subroutine ts_short_char(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, net_Fs)
+  subroutine ts_short_char(Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+    & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     implicit none
 
     !! Input variables
-    logical, intent(in) :: surf, Bezier
+    logical, intent(in) :: Bezier
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0, mu_z, Tint, AB, Ts, sw_a_surf, lw_a_surf
+    real(dp), intent(in) :: F0, mu_z, Tint, AB, Ts, sw_a_surf
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
-    real(dp), dimension(nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
+    real(dp), dimension(nlay), intent(in) :: sw_a, sw_g
 
     !! Output variables
-    real(dp), intent(out) :: olr, net_Fs
+    real(dp), intent(out) :: olr, asr
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
@@ -104,12 +104,7 @@ contains
 
     ! Edges are linearly interpolated
     Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
-
-    if (surf .eqv. .True.) then
-      Te(nlev) = Ts ! If surface, temperature at edge is the surface temperature
-    else
-      Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
-    end if
+    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Shortwave flux calculation
     if (mu_z > 0.0_dp) then
@@ -122,28 +117,106 @@ contains
 
     !! Longwave two-stream flux calculation
     be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
-    if (surf .eqv. .True.) then
-      be_int = 0.0_dp
-    else
-      be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
-    end if
+    be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
 
-    call lw_grey_updown_linear(surf, nlay, nlev, be, be_int, tau_IRe(:), lw_a_surf, lw_up(:), lw_down(:))
+    call lw_grey_updown_linear(nlay, nlev, be, be_int, tau_IRe(:), lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
     net_F(:) = lw_net(:) + sw_net(:)
 
-    !! Net surface flux (for surface temperature evolution)
-    !! We have to define positive as downward (heating) and cooling (upward) in this case
-    net_Fs = sw_down(nlev) + lw_down(nlev) - lw_up(nlev)
-
     !! Output the olr
     olr = lw_up(1)
 
+    !! Output asr
+    asr = sw_down(1) - sw_up(1)
+
   end subroutine ts_short_char
 
+  subroutine lw_grey_updown_linear(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
+    implicit none
+
+    !! Input variables
+    integer, intent(in) :: nlay, nlev
+    real(dp), dimension(nlev), intent(in) :: be, tau_IRe
+    real(dp), intent(in) :: be_int
+
+    !! Output variables
+    real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
+
+    !! Work variables and arrays
+    integer :: k, m
+    real(dp), dimension(nlay) :: dtau, edel
+    real(dp) :: del, e0i, e1i, e1i_del
+    real(dp), dimension(nlay) :: Am, Bm, Gp, Bp
+    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
+
+    !! Calculate dtau in each layer
+    do k = 1, nlay
+      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
+    end do
+
+    ! Zero the total flux arrays
+    lw_up(:) = 0.0_dp
+    lw_down(:) = 0.0_dp
+
+    !! Start loops to integrate in mu space
+    do m = 1, nmu
+
+      !! Prepare loop
+      do k = 1, nlay
+        ! Olson & Kunasz (1987) linear interpolant parameters
+        del = dtau(k)/uarr(m)
+        edel(k) = exp(-del)
+        e0i = 1.0_dp - edel(k)
+        e1i = del - e0i
+
+        e1i_del = e1i/del ! The equivalent to the linear in tau term
+
+        if (dtau(k) < 1.0e-6_dp) then
+          ! If we are in very low optical depth regime, then use an isothermal approximation
+          Am(k) = (0.5_dp*(be(k+1) + be(k)) * e0i)/be(k)
+          Bm(k) = 0.0_dp
+          Gp(k) = 0.0_dp
+          Bp(k) = Am(k)
+        else
+          Am(k) = e0i - e1i_del ! Am(k) = Gp(k), just indexed differently
+          Bm(k) = e1i_del ! Bm(k) = Bp(k), just indexed differently
+          Gp(k) = Am(k)
+          Bp(k) = Bm(k)
+        end if
+      end do
+
+      !! Begin two-stream loops
+      !! Perform downward loop first
+      ! Top boundary condition - 0 flux downward from top boundary
+      lw_down_g(1) = 0.0_dp
+      do k = 1, nlay
+        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1) ! TS intensity
+      end do
+
+      !! Perform upward loop
+      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+      ! here the lw_a_surf is assumed to be = 1 as per the definition
+      ! here we use the same condition but use intensity units to be consistent
+      lw_up_g(nlev) = lw_down_g(nlev) + be_int
+
+      do k = nlay, 1, -1
+        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
+      end do
+
+      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
+      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
+      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
+
+    end do
+
+    !! The flux is the intensity * 2pi
+    lw_down(:) = twopi * lw_down(:)
+    lw_up(:) = twopi * lw_up(:)
+
+  end subroutine lw_grey_updown_linear
 
   subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
@@ -163,7 +236,7 @@ contains
     real(dp), dimension(nlev) ::  w, g, f
     real(dp), dimension(nlev) :: tau_Ve_s
     real(dp), dimension(nlay) :: tau
-    real(dp), dimension(nlay) :: tau_s, w_s, f_s, g_s
+    real(dp), dimension(nlev) :: tau_s, w_s, f_s, g_s
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
     real(dp), dimension(nlev) :: R_b, T_b, R, T
     real(dp), dimension(nlev) :: Tf
@@ -176,7 +249,7 @@ contains
     g(nlev) = 0.0_dp
 
     ! If zero albedo across all atmospheric layers then return direct beam only
-    if (all(w(:) == 0.0_dp)) then
+    if (all(w(:) <= 1.0e-12_dp)) then
       sw_down(:) = Finc * mu_z * exp(-tau_Ve(:)/mu_z)
       sw_down(nlev) = sw_down(nlev) * (1.0_dp - w_surf) ! The surface flux for surface heating is the amount of flux absorbed by surface
       sw_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
@@ -249,97 +322,6 @@ contains
     sw_up(:) = sw_up(:) * mu_z * Finc
 
   end subroutine sw_grey_updown_adding
-
-  subroutine lw_grey_updown_linear(surf, nlay, nlev, be, be_int, tau_IRe, lw_a_surf, lw_up, lw_down)
-    implicit none
-
-    !! Input variables
-    logical, intent(in) :: surf
-    integer, intent(in) :: nlay, nlev
-    real(dp), dimension(nlev), intent(in) :: be, tau_IRe
-    real(dp), intent(in) :: be_int, lw_a_surf
-
-    !! Output variables
-    real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
-
-    !! Work variables and arrays
-    integer :: k, m
-    real(dp), dimension(nlay) :: dtau, edel
-    real(dp) :: del, e0i, e1i, e1i_del
-    real(dp), dimension(nlay) :: Am, Bm, Gp, Bp
-    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
-
-    !! Calculate dtau in each layer
-    do k = 1, nlay
-      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
-    end do
-
-    ! Zero the total flux arrays
-    lw_up(:) = 0.0_dp
-    lw_down(:) = 0.0_dp
-
-    !! Start loops to integrate in mu space
-    do m = 1, nmu
-
-      !! Prepare loop
-      do k = 1, nlay
-        ! Olson & Kunasz (1987) linear interpolant parameters
-        del = dtau(k)/uarr(m)
-        edel(k) = exp(-del)
-        e0i = 1.0_dp - edel(k)
-        e1i = del - e0i
-
-        e1i_del = e1i/del ! The equivalent to the linear in tau term
-
-        if (dtau(k) < 1.0e-6_dp) then
-          ! If we are in very low optical depth regime, then use an isothermal approximation
-          Am(k) = (0.5_dp*(be(k+1) + be(k)) * e0i)/be(k)
-          Bm(k) = 0.0_dp
-          Gp(k) = 0.0_dp
-          Bp(k) = Am(k)
-        else
-          Am(k) = e0i - e1i_del ! Am(k) = Gp(k), just indexed differently
-          Bm(k) = e1i_del ! Bm(k) = Bp(k), just indexed differently
-          Gp(k) = Am(k)
-          Bp(k) = Bm(k)
-        end if
-      end do
-
-      !! Begin two-stream loops
-      !! Perform downward loop first
-      ! Top boundary condition - 0 flux downward from top boundary
-      lw_down_g(1) = 0.0_dp
-      do k = 1, nlay
-        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1) ! TS intensity
-      end do
-
-      !! Perform upward loop
-
-      if (surf .eqv. .True.) then
-        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
-        lw_up_g(nlev) = lw_down_g(nlev)*lw_a_surf + be(nlev)
-      else
-        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-        ! here the lw_a_surf is assumed to be = 1 as per the definition
-        ! here we use the same condition but use intensity units to be consistent
-        lw_up_g(nlev) = lw_down_g(nlev) + be_int
-      end if
-
-      do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
-      end do
-
-      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
-      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
-
-    end do
-
-    !! The flux is the intensity * 2pi
-    lw_down(:) = twopi * lw_down(:)
-    lw_up(:) = twopi * lw_up(:)
-
-  end subroutine lw_grey_updown_linear
 
   ! Perform linear interpolation in log10 space
   subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)
