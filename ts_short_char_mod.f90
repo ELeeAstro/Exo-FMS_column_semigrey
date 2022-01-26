@@ -20,7 +20,7 @@ module ts_short_char_mod
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  !! Gauss quadrature variables, cosine angle values (uarr] and weights (w)
+  !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
   !! here you can comment in/out groups of mu values for testing
   !! make sure to make clean and recompile if you change these
 

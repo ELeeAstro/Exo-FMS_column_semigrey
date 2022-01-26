@@ -1,11 +1,12 @@
 !!!
-! Elspeth KH Lee - May 2021
-! Two-stream method following the Toon method (Toon et al. 1989)
-!
-! Based on the CHIMERA code by Mike Line, but cleaned up slightly
-! Pros: Fast, accurate at high optical depths, well used and familiar method
-! Cons:
-! IN DEVELOPMENT - USE WITH UTMOST CAUTION, YOU WILL GET WRONG ANSWERS
+! Elspeth KH Lee - May 2021 : Initial version
+!                - Jan 2022 : Working version
+!                
+! sw: Toon et al. 1989 method following the CHIMERA implimentation
+! lw: Two-stream method following the "Toon" method (Toon et al. 1989)
+!     Based on the CHIMERA code by Mike Line, but cleaned up slightly
+!     Pros: Fast, accurate at high optical depths, well used and familiar method
+!     Cons: For longwave combined high ssa and g (0.9+,0.9+) can be unstable
 !!!
 
 module ts_Toon_scatter_mod
@@ -22,7 +23,7 @@ module ts_Toon_scatter_mod
 
   real(dp), parameter :: ubari = 0.5_dp
 
-  !! Gauss quadrature variables, cosine angle values (uarr] and weights (w)
+  !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
   !! here you can comment in/out groups of mu values for testing
   !! make sure to make clean and recompile if you change these
 
