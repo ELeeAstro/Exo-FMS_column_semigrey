@@ -240,7 +240,7 @@ program Exo_FMS_RC
       !! In development !!
       ! Toon method with SW/LW scattering
       call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr)
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr)
     case('Shortchar')
       ! Short characteristics method without LW scattering
       call ts_short_char(Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &

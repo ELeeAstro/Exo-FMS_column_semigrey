@@ -24,7 +24,7 @@ Some compiler options for gfortran, nvfortran and ifort are provided in the make
 
 This code performs various two-stream approaches from the literature in a semi-grey context:
 1. Isothermal layer approximation
-2. Toon et al. method (Scattering version in dev.)
+2. Toon et al. method (Scattering and non-scattering versions)
 3. Short Characteristics method
 4. Heng et al. method
 5. Neil Lewis's scattering code, following Pierrehumbert (2010)
@@ -49,7 +49,7 @@ ts_scheme: \
 'Isothermal' - Isothermal ts method \
 'Isothermal_2' - Isothermal ts method - high optical depth version \
 'Toon' - Toon et al. ts method \
-'Toon_scatter' - Toon et al. ts method with scattering (IN DEVELOPMENT) \
+'Toon_scatter' - Toon et al. ts method with scattering \
 'Shortchar' -  Short characteristics method \
 'Heng' - Heng et al. method \
 'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
@@ -117,8 +117,9 @@ You will need to clean and recompile the code if these are changed.
 # Personal recommendations
 
 For non-scattering problems, we generally recommend that the short characteristics method be used, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
-For shortwave scattering problems we recommend the adding method as included (or using the two-stream DISORT), the adding method is generally fast and accurate (enough).
-For longwave scattering problems we recommend the two stream DISORT version, it is very reliable but generally slower compared to other scattering methods.
+For shortwave scattering (and non-scattering) problems we recommend the adding method as included (or using the two-stream DISORT or Toon et al. with scattering), the adding method is generally fast and accurate (enough).
+For longwave scattering problems we recommend the two stream Toon et al. version with scattering, however, it may be unstable at combined very high g (e.g. 0.9+) and ssa (e.g. 0.9+).
+Otherwise, for longwave scattering we recommend the two-stream DISORT version, which is slower but more stable.
 
 # Future developments
 

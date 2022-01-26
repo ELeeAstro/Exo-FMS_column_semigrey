@@ -1,6 +1,6 @@
 &FMS_RC_nml
 
-ts_scheme = 'Shortchar'
+ts_scheme = 'Isothermal'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 

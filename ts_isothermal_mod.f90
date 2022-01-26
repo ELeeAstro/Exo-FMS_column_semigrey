@@ -119,7 +119,6 @@ contains
     else
       ! Lower boundary condition - internal heat definition Fint = F_down - F_up
       ! here the lw_a_surf is assumed to be = 1 as per the definition
-      ! here we use the same condition but use intensity units to be consistent
       lw_up(nlev) = lw_down(nlev) + be_int
     end if
 
