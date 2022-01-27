@@ -283,8 +283,8 @@ contains
 
     !this would be the raw two stream solution Fluxes, but we
     !won't use these. Will use source function technique
-    lw_up_raw(:) = pi*(xk1(:)*Ep(:) + gam(:)*xk2(:)*Em(:) + Cpm1(:))
-    lw_down_raw(:) = pi*(xk1(:)*Ep(:)*gam(:) + xk2(:)*Em(:) + Cmm1(:))
+    !lw_up_raw(:) = pi*(xk1(:)*Ep(:) + gam(:)*xk2(:)*Em(:) + Cpm1(:))
+    !lw_down_raw(:) = pi*(xk1(:)*Ep(:)*gam(:) + xk2(:)*Em(:) + Cmm1(:))
 
     ! do k = 1, nlev
     !   print*, k, lw_up_raw(k), lw_down_raw(k)
