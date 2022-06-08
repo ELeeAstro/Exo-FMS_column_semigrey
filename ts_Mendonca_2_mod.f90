@@ -1,13 +1,12 @@
 !!!
-! Elspeth KH Lee - May 2021 : Initial version
-!                - Dec 2021 : adding method & Bezier interpolation
+! Elspeth KH Lee - Mar 2022 : Initial version
 ! sw: Adding layer method with scattering
-! lw: Two-stream method following the Mendonca methods
+! lw: Two-stream method following the Mendonca et al. (2018) layer method
 !     Pros: Very fast
-!     Cons: Innaccurate at high optical depth
+!     Cons: No LW scattering
 !!!
 
-module ts_Mendonca_mod
+module ts_Mendonca_2_mod
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -16,14 +15,53 @@ module ts_Mendonca_mod
 
   !! Required constants
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
+  real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  public :: ts_Mendonca
+  integer, parameter :: nf = 5
+
+  !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
+  !! here you can comment in/out groups of mu values for testing
+  !! make sure to make clean and recompile if you change these
+
+  !! single angle diffusion factor approximation - typically 1/1.66
+  !integer, parameter :: nmu = 1
+  !real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.66_dp/)
+  !real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
+  !real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+
+  !! Legendre quadrature for 2 nodes
+  ! integer, parameter :: nmu = 2
+  ! real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+
+  !! Lacis & Oinas (1991) 3 point numerical values - Does not work somehow, e-mail me if you know why :)
+  integer, parameter :: nmu = 3
+  real(dp), dimension(nmu), parameter :: uarr = (/0.1_dp, 0.5_dp, 1.0_dp/)
+  real(dp), dimension(nmu), parameter :: wuarr = (/0.0433_dp, 0.5742_dp, 0.3825_dp/)
+
+  !! Legendre quadrature for 4 nodes
+  ! integer, parameter :: nmu = 4
+  ! real(dp), dimension(nmu), parameter :: uarr = &
+  !   & (/0.06943184_dp, 0.33000948_dp, 0.66999052_dp, 0.93056816_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = &
+  !   & (/0.17392742_dp, 0.32607258_dp, 0.32607258_dp, 0.17392742_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+
+  !! 5 point EGP quadrature values
+  ! integer, parameter :: nmu = 5
+  ! real(dp), dimension(nmu), parameter :: uarr = &
+  !   &(/0.0985350858_dp, 0.3045357266_dp, 0.5620251898_dp, 0.8019865821_dp, 0.9601901429_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = &
+  !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
+
+  public :: ts_Mendonca_2
   private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_Mendonca(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+  subroutine ts_Mendonca_2(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
     & sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     implicit none
 
@@ -77,11 +115,11 @@ contains
     end if
 
     !! Longwave two-stream flux calculation
-    be(:) = sb * Te(:)**4  ! Integrated planck function intensity at levels
+    be(:) = (sb * Te(:)**4)  ! Integrated planck function intensity at levels
     if (surf .eqv. .True.) then
-      be_int = sb * Ts**4
+      be_int = (sb * Ts**4)
     else
-      be_int = sb * Tint**4 ! Integrated planck function intensity for internal temperature
+      be_int = (sb * Tint**4) ! Integrated planck function intensity for internal temperature
     end if
     call lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe(:), lw_a_surf, lw_up(:), lw_down(:))
 
@@ -100,7 +138,7 @@ contains
     !! Output asr
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine ts_Mendonca
+  end subroutine ts_Mendonca_2
 
   subroutine lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe, lw_a_surf, lw_up, lw_down)
     implicit none
@@ -115,43 +153,73 @@ contains
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
 
     !! Work variables and arrays
-    integer :: k
-    real(dp), dimension(nlay) :: dtau, E, Es, r, mu, Tf
+    integer :: k, n, nn, m
+    real(dp) :: fact
+    real(dp), dimension(nlay) :: dtau, E, Es, Tf
+    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
-    !! Calculate dtau in each layer and prepare loop
+    !! Calculate dtau in each layer
     do k = 1, nlay
       dtau(k) = tau_IRe(k+1) - tau_IRe(k)
-      r(k) = 1.5_dp + 0.5_dp/(1.0_dp + 4.0_dp*dtau(k) + 10.0_dp*dtau(k)**2)
-      mu(k) = 1.0_dp/r(k)
-      Tf(k) = exp(-dtau(k)/mu(k))
-      E(k) = ((be(k+1) - be(k) * Tf(k)) * dtau(k)) / (dtau(k) - mu(k)*log(be(k)/be(k+1)))
-      Es(k) = ((be(k) - be(k+1) * Tf(k)) * dtau(k)) / (dtau(k) - mu(k)*log(be(k+1)/be(k)))
     end do
 
-    !! Begin two-stream loops
-    !! Perform downward loop first
-    ! Top boundary condition - 0 flux downward from top boundary
-    lw_down(1) = 0.0_dp
-    do k = 1, nlay
-      lw_down(k+1) = lw_down(k)*Tf(k) + Es(k)
-    end do
+    ! Zero the total flux arrays
+    lw_up(:) = 0.0_dp
+    lw_down(:) = 0.0_dp
 
-    !! Perform upward loop
-    if (surf .eqv. .True.) then
-      ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
-      lw_up(nlev) = lw_down(nlev)*lw_a_surf + be_int
-    else
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here the lw_a_surf is assumed to be = 1 as per the definition
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up(nlev) = lw_down(nlev) + be_int
-    end if
-    do k = nlay, 1, -1
-      lw_up(k) = lw_up(k+1)*Tf(k) + E(k)
+    !! Start loops to integrate in mu space
+    do m = 1, nmu
+
+      !! Calculate dtau in each layer and prepare loop
+      do k = 1, nlay
+        if (dtau(k) < 1.0e-6_dp) then
+          E(k) = 0.0_dp
+          Es(k) = 0.0_dp
+          fact = 1.0_dp
+          do n = 1, nf
+            do nn = 1, n
+              ! Calculate factorial part
+              fact = fact * (real(nn,dp) + 1.0_dp)
+            end do
+            E(k) = E(k) + (-1.0_dp)**(n+1) * ((be(k+1) + real(n,dp)*be(k))/fact) * (dtau(k)/uarr(m))**n
+            Es(k) = Es(k) + (-1.0_dp)**(n+1) * ((be(k) + real(n,dp)*be(k+1))/fact) * (dtau(k)/uarr(m))**n
+          end do
+        else
+          Tf(k) = exp(-dtau(k)/uarr(m))
+          E(k) = be(k+1) - be(k) + (be(k) + uarr(m)/dtau(k)*(be(k) - be(k+1)))*(1.0_dp - Tf(k))
+          Es(k) = be(k) - be(k+1) + (be(k) - uarr(m)/dtau(k)*(be(k) - be(k+1)))*(1.0_dp - Tf(k))
+        end if
+      end do
+
+      !! Begin two-stream loops
+      !! Perform downward loop first
+      ! Top boundary condition - 0 flux downward from top boundary
+      lw_down_g(1) = 0.0_dp
+      do k = 1, nlay
+        lw_down_g(k+1) = lw_down_g(k)*Tf(k) + Es(k)
+      end do
+
+      !! Perform upward loop
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(nlev) = lw_down_g(nlev)*lw_a_surf + be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(nlev) = lw_down_g(nlev) + be_int
+      end if
+      do k = nlay, 1, -1
+        lw_up_g(k) = lw_up_g(k+1)*Tf(k) + E(k)
+      end do
+
+      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
+      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
+      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
+
     end do
 
   end subroutine lw_grey_updown
-
 
   subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
@@ -316,7 +384,7 @@ contains
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
     end if
-    
+
   end subroutine bezier_interp
 
-end module ts_Mendonca_mod
+end module ts_Mendonca_2_mod

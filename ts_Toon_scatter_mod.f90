@@ -1,7 +1,7 @@
 !!!
 ! Elspeth KH Lee - May 2021 : Initial version
 !                - Jan 2022 : Working version
-!                
+!
 ! sw: Toon et al. 1989 method following the CHIMERA implimentation
 ! lw: Two-stream method following the "Toon" method (Toon et al. 1989)
 !     Based on the CHIMERA code by Mike Line, but cleaned up slightly
@@ -87,7 +87,7 @@ contains
     real(dp) :: Finc, be_int
     real(dp), dimension(nlev) :: Te, be
     real(dp), dimension(nlev) :: lpe
-    real(dp), dimension(nlay) :: lTl, lpl    
+    real(dp), dimension(nlay) :: lTl, lpl
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
 
@@ -426,7 +426,7 @@ contains
 
     l = nlay + nlay
     lm2 = l - 2
-    lm1 = l -1
+    lm1 = l - 1
 
     do k = 1, nlay
       dtau1(k) = max(tau_V1(k+1) - tau_V1(k),1e-5_dp)
@@ -615,11 +615,11 @@ contains
       ! left hand side interpolation
       !print*,'left'
       w = dx1/(dx + dx1)
-      !wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
+      wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
+        w = 1.0_dp
+      end if
       yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
       t = (x - xi(1))/dx
       y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
@@ -627,11 +627,11 @@ contains
       ! right hand side interpolation
       !print*,'right'
       w = dx/(dx + dx1)
-      !wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
+      wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
+        w = 1.0_dp
+      end if
       yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)

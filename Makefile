@@ -48,6 +48,10 @@ OBJECTS = \
 	  ts_disort_scatter_mod.o \
     FMS_RC.o
 
+#		ts_short_char_mod_Bezier.o \
+#		ts_Heng_ITS_mod.o \
+
+
 # executable statement
 EXECS  = FMS_RC
 

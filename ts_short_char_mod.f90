@@ -84,7 +84,7 @@ contains
     real(dp) :: Finc, be_int
     real(dp), dimension(nlev) :: Te, be
     real(dp), dimension(nlev) :: lpe
-    real(dp), dimension(nlay) :: lTl, lpl    
+    real(dp), dimension(nlay) :: lTl, lpl
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
 
@@ -98,10 +98,13 @@ contains
 
       ! Perform interpolation using Bezier peicewise polynomial interpolation
       do i = 2, nlay-1
+        !call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))
         call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))
         Te(i) = 10.0_dp**(Te(i))
         !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
       end do
+      !stop
+      !call bezier_interp(lpl(nlay-2:nlay), lTl(nlay-2:nlay), 3, lpe(nlay), Te(nlay))
       call bezier_interp(lpl(nlay-2:nlay), lTl(nlay-2:nlay), 3, lpe(nlay), Te(nlay))
       Te(nlay) = 10.0_dp**(Te(nlay))
     else
@@ -367,6 +370,46 @@ contains
 
   end subroutine linear_log_interp
 
+  !lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i)
+  subroutine bezier_interp_2(xi, yi, ni, x, y)
+    implicit none
+
+    integer, intent(in) :: ni
+    real(dp), dimension(ni), intent(in) :: xi, yi
+    real(dp), intent(in) :: x
+    real(dp), intent(out) :: y
+
+    real(dp) :: xc, dx, dx1, dy, dy1, w, yc0, yc1, t, wlim, wlim1, yc
+
+    !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
+    dx = xi(2) - xi(1)
+    dx1 = xi(3) - xi(2)
+    dy = yi(2) - yi(1)
+    dy1 = yi(3) - yi(2)
+
+    w = dx1/(dx + dx1)
+    yc0 = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
+    !t = (x - xi(1))/dx
+
+    w = dx/(dx + dx1)
+    yc1 = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
+    t = (x - xi(2))/(dx1)
+
+    if ((w*dy/dx + (1.0_dp - w)*dy1/dx1)*(w*dy1/dx1 + (1.0_dp - w)*dy/dx) <= 0.0_dp) then
+      yc0 = yi(2)
+      yc1 = yi(2)
+    end if
+
+
+    yc = (yc1 + yc0)/2.0_dp
+
+    !y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
+
+    y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
+
+
+  end subroutine bezier_interp_2
+
   subroutine bezier_interp(xi, yi, ni, x, y)
     implicit none
 
@@ -387,11 +430,11 @@ contains
       ! left hand side interpolation
       !print*,'left'
       w = dx1/(dx + dx1)
-      !wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
+      wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
+        w = 1.0_dp
+      end if
       yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
       t = (x - xi(1))/dx
       y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
@@ -399,11 +442,11 @@ contains
       ! right hand side interpolation
       !print*,'right'
       w = dx/(dx + dx1)
-      !wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
-      !wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      !if (w < wlim .or. w > wlim1) then
-      !  w = 1.0_dp
-      !end if
+      wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
+      wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
+      if (w < min(wlim,wlim1) .or. w > max(wlim,wlim1)) then
+        w = 1.0_dp
+      end if
       yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
