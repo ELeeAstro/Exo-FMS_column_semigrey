@@ -2,9 +2,9 @@
 
 Major Update History
  - May 2021 - initial models
- - Dec 2021 - major overhual 
+ - Dec 2021 - major overhual
 
-Elspeth KH Lee - Dec 2021 
+Elspeth KH Lee - Dec 2021
 
 This is one part of a series of codes that build upon different two-stream approaches and schemes, primarily useful for the GCM modeling community.
 This is the semi-grey version, where one band is in the visible, representing incident radiation from a host star, and one band in the IR, representing the internal radiation propagating inside the planetary atmosphere.
@@ -81,22 +81,28 @@ mu_z - cosine angle of the solar zenith angle \
 Tirr - Irradiation temperature \
 Tint - Internal temperature
 
+Bezier - use Bezier interpolation for Temperature levels (.True.)
+
 k_V - visible band opacity (m2 kg-1) \
 k_IR - IR band opacity (m2 kg-1) \
 AB - Bond albedo \
 fl - The Heng et al. (2011) parameter used for pressure dependent IR optical depths
+met - metallicty in dex solar (M/H)
+
+ns - Shortwave power index (For Heng opacities) \
+nl - Longwave power index (For Heng opacities)
 
 sw_ac - shortwave single scattering albedo (constant at all layers) \
 sw_gc - shortwave asymmetry factor (constant at all layers) \
 lw_ac - longwave single scattering albedo (constant at all layers) \
 lw_gc - longwave asymmetry factor (constant at all layers)
 
+zcorr - include zenith angle correction (.True.) \
+zcorr_meth - zenith angle correction method (1,2)  \
+radius - radius of the planet at surface (m)
+
 iIC - Initial condition selection integer (3 = Guillot (2010) profile using k_V and k_IR, 6 = adiabat from Ts_init to Tstrat_init) \
 corr - Flag to perform the adiabatic gradient correction in the initial conditions \
-met - metallicty in dex solar (M/H)
-
-ns - Shortwave power index (For Heng opacities) \
-nl - Longwave power index (For Heng opacities)
 
 surf - solid surface is present (.True.) \
 Ts_init - initial temperature of surface \
