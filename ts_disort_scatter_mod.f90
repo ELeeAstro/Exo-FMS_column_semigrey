@@ -19,13 +19,13 @@ module ts_disort_scatter_mod
 contains
 
   subroutine ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr, asr)
+    & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     implicit none
 
     !! Input variables
     logical, intent(in) :: Bezier
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0, mu_z, Tint, AB, sw_a_surf
+    real(dp), intent(in) :: F0, mu_z, Tint, AB
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
@@ -116,7 +116,7 @@ contains
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: lxval, ly1, ly2, lx1, lx2
+    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
@@ -136,7 +136,7 @@ contains
     real(dp), intent(in) :: x
     real(dp), intent(out) :: y
 
-    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+    real(dp) :: dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
 
     !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
     dx = xi(2) - xi(1)

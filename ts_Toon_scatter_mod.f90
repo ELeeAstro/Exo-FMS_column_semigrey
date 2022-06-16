@@ -136,7 +136,7 @@ contains
     !! Longwave two-stream flux calculation
     be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
     be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
-    call lw_grey_updown_Toon(nlay, nlev, be, be_int, tau_IRe(:), lw_a, lw_g, lw_a_surf, lw_up(:), lw_down(:))
+    call lw_grey_updown_Toon(nlay, nlev, be, tau_IRe(:), lw_a, lw_g, lw_a_surf, lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -154,18 +154,18 @@ contains
 
   end subroutine ts_Toon_scatter
 
-  subroutine lw_grey_updown_Toon(nlay, nlev, be, be_int, tau_IR1, w01, gin, rsurf, lw_up, lw_down)
+  subroutine lw_grey_updown_Toon(nlay, nlev, be, tau_IR1, w01, gin, rsurf, lw_up, lw_down)
     implicit none
 
     !! Input
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: rsurf, be_int
+    real(dp), intent(in) :: rsurf
     real(dp), dimension(nlev), intent(in) :: tau_IR1, be
     real(dp), dimension(nlay), intent(in) :: w01, gin
 
     !! Output
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
-    real(dp), dimension(nlev) :: lw_up_raw, lw_down_raw
+    !real(dp), dimension(nlev) :: lw_up_raw, lw_down_raw
 
     !! Work variables
     integer :: k, i, n, m
@@ -176,14 +176,14 @@ contains
     real(dp), dimension(nlay) :: w0, hg
     real(dp), dimension(nlay) :: B0, B1
     real(dp), dimension(nlay) :: lam, gam, alp, term
-    real(dp), dimension(nlay) :: Am, Ap, Cpm1, Cmm1, Cp, Cm
+    real(dp), dimension(nlay) :: Cpm1, Cmm1, Cp, Cm
     real(dp), dimension(nlay) :: exptrm, Ep, Em, E1, E2, E3, E4
     real(dp), dimension(nlay+nlay) :: Af, Bf, Cf, Df, xkk
     real(dp), dimension(nlay) :: xk1, xk2
 
     real(dp), dimension(nlay) :: alphax, g, h, xj, xk
     real(dp), dimension(nlay) :: alpha1, alpha2, sigma1, sigma2
-    real(dp), dimension(nlay) :: em1, obj, epp, em4_mp, obj2, epp2, em2, em3
+    real(dp), dimension(nlay) :: em1, obj, epp, obj2, epp2, em2, em3
 
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
@@ -558,7 +558,7 @@ contains
 
     integer :: i
     integer, parameter :: nmax = 301
-    real(dp) :: x, xkb
+    real(dp) :: x
     real(dp), dimension(nmax) :: as, ds
 
     as(l) = af(l)/bf(l)
@@ -583,7 +583,7 @@ contains
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: lxval, ly1, ly2, lx1, lx2
+    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
@@ -603,7 +603,7 @@ contains
     real(dp), intent(in) :: x
     real(dp), intent(out) :: y
 
-    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+    real(dp) :: dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
 
     !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
     dx = xi(2) - xi(1)

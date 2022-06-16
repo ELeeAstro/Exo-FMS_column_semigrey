@@ -19,7 +19,7 @@ program Exo_FMS_RC
   use ts_Heng_mod, only : ts_Heng
   !use ts_Heng_ITS_mod, only: ts_Heng_ITS
   use ts_short_char_mod, only : ts_short_char
-!  use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
+  use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
   use ts_Mendonca_mod, only : ts_Mendonca
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
@@ -281,12 +281,12 @@ program Exo_FMS_RC
       & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr)
     case('Shortchar')
       ! Short characteristics method without LW scattering
-      call ts_short_char(Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
+      call ts_short_char(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
       & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
-    ! case('Shortchar_Bezier')
-    !   ! Short characteristics method without LW scattering
-    !   call ts_short_char_Bezier(Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-    !   & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
+    case('Shortchar_Bezier')
+      ! Short characteristics method without LW scattering
+      call ts_short_char_Bezier(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
+      & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     case('Heng')
       ! Heng flux method without LW scattering
       tau_IRl(:) = fl*tau_IRref*(pl(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pl(:)/pref)**2  ! Optical depth at layer midpoints
@@ -303,7 +303,7 @@ program Exo_FMS_RC
     case('Disort_scatter')
       ! Two-stream DISORT version ()with SW/LW scattering)
       call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, net_F, olr, asr)
+      & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     case('Mendonca')
       ! Mendonca method without LW scattering
       call ts_Mendonca(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
@@ -323,6 +323,8 @@ program Exo_FMS_RC
     !! Calculate the surface temperature tedency due to radiation
     if (surf .eqv. .True.) then
       dTs = net_Fs / (cp_surf)
+    else
+      dTs = 0.0_dp
     end if
 
 

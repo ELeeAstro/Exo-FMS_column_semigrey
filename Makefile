@@ -6,7 +6,7 @@
 F90          = gfortran
 F90LINKER    = gfortran
 DEFS      =
-# FFLAGS   	= -Og -pipe -g -fbacktrace -Wall -Wextra -pedantic -fcheck=all -Wconversion -fbounds-check
+#FFLAGS   	= -Og -pipe -g -fbacktrace -Wall -Wextra -pedantic -fcheck=all -Wconversion -fbounds-check
 FFLAGS   = -O3 -pipe
 INCLUDES  =
 LFLAGS    = $(FFLAGS)
@@ -46,9 +46,9 @@ OBJECTS = \
     ts_Mendonca_mod.o \
     ts_Lewis_scatter_mod.o \
 	  ts_disort_scatter_mod.o \
+		ts_short_char_mod_Bezier.o \
     FMS_RC.o
 
-#		ts_short_char_mod_Bezier.o \
 #		ts_Heng_ITS_mod.o \
 
 

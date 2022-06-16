@@ -41,7 +41,6 @@ contains
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
-    integer :: i
     real(dp) :: Finc, be_int
     real(dp), dimension(nlay) :: bl
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
@@ -143,11 +142,11 @@ contains
 
     !! Work variables
     integer :: k
-    real(dp) :: lamtau, e_lamtau, lim, arg, apg, amg
+    real(dp) :: lamtau, e_lamtau, arg, apg, amg
     real(dp), dimension(nlev) ::  w, g, f
     real(dp), dimension(nlev) :: tau_Ve_s
     real(dp), dimension(nlay) :: tau
-    real(dp), dimension(nlev) :: tau_s, w_s, f_s, g_s
+    real(dp), dimension(nlev) :: tau_s, w_s, g_s
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
     real(dp), dimension(nlev) :: R_b, T_b, R, T
     real(dp), dimension(nlev) :: Tf

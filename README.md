@@ -3,6 +3,7 @@
 Major Update History
  - May 2021 - initial models
  - Dec 2021 - major overhual
+ - Jun 2022 - Improvements + Bezier
 
 Elspeth KH Lee - Dec 2021
 
@@ -25,7 +26,7 @@ Some compiler options for gfortran, nvfortran and ifort are provided in the make
 This code performs various two-stream approaches from the literature in a semi-grey context:
 1. Isothermal layer approximation
 2. Toon et al. method (Scattering and non-scattering versions)
-3. Short Characteristics method
+3. Short Characteristics method w. linear and Bezier interpolants
 4. Heng et al. method
 5. Neil Lewis's scattering code, following Pierrehumbert (2010)
 6. Mendonca et al. method
@@ -50,7 +51,8 @@ ts_scheme: \
 'Isothermal_2' - Isothermal ts method - high optical depth version \
 'Toon' - Toon et al. ts method \
 'Toon_scatter' - Toon et al. ts method with scattering \
-'Shortchar' -  Short characteristics method \
+'Shortchar' -  Short characteristics method  with linear interpolants \
+'Shortchar_Bezier' -  Short characteristics method with Bezier interpolants \
 'Heng' - Heng et al. method \
 'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
 'Mendonca' - Mendonca et al. method \
@@ -86,8 +88,8 @@ Bezier - use Bezier interpolation for Temperature levels (.True.)
 k_V - visible band opacity (m2 kg-1) \
 k_IR - IR band opacity (m2 kg-1) \
 AB - Bond albedo \
-fl - The Heng et al. (2011) parameter used for pressure dependent IR optical depths
-met - metallicty in dex solar (M/H)
+fl - The Heng et al. (2011) parameter used for pressure dependent IR optical depths \
+met - metallicity in dex solar (M/H)
 
 ns - Shortwave power index (For Heng opacities) \
 nl - Longwave power index (For Heng opacities)
@@ -101,12 +103,12 @@ zcorr - include zenith angle correction (.True.) \
 zcorr_meth - zenith angle correction method (1,2)  \
 radius - radius of the planet at surface (m)
 
-iIC - Initial condition selection integer (3 = Guillot (2010) profile using k_V and k_IR, 6 = adiabat from Ts_init to Tstrat_init) \
-corr - Flag to perform the adiabatic gradient correction in the initial conditions \
+iIC - Initial condition selection integer (3 = Guillot (2010) profile using k_V and k_IR, 6 = adiabatic from Ts_init to Tstrat_init) \
+corr - Flag to perform the adiabatic gradient correction in the initial conditions
 
 surf - solid surface is present (.True.) \
 Ts_init - initial temperature of surface \
-Tstrat_init - inital temperautre of stratosphere \
+Tstrat_init - initial temperature of stratosphere \
 cp_surf - surface areal heat capacity \
 sw_a_surf - shortwave surface albedo \
 lw_a_surf - longwave surface albedo
@@ -122,7 +124,7 @@ You will need to clean and recompile the code if these are changed.
 
 # Personal recommendations
 
-For non-scattering problems, we generally recommend that the short characteristics method be used, as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
+For non-scattering problems, we generally recommend that the short characteristics method be used (linear or Bezier), as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
 For shortwave scattering (and non-scattering) problems we recommend the adding method as included (or using the two-stream DISORT or Toon et al. with scattering), the adding method is generally fast and accurate (enough).
 For longwave scattering problems we recommend the two stream Toon et al. version with scattering, however, it may be unstable at combined very high g (e.g. 0.9+) and ssa (e.g. 0.9+).
 Otherwise, for longwave scattering we recommend the two-stream DISORT version, which is slower but more stable.

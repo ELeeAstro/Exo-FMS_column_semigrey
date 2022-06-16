@@ -41,7 +41,6 @@ contains
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
-    integer :: i
     real(dp) :: Finc, be_int
     real(dp), dimension(nlay) :: bl
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
@@ -59,7 +58,7 @@ contains
     !! Longwave two-stream flux calculation
     bl(:) = sb * Tl(:)**4  ! Integrated planck function flux at levels
     be_int = sb * Tint**4 ! Integrated planck function flux for internal temperature
-    call lw_grey_updown(nlay, nlev, bl, be_int, tau_IRe(:), lw_a(:), lw_g(:), mu_z, lw_up(:), lw_down(:))
+    call lw_grey_updown(nlay, nlev, bl, be_int, tau_IRe(:), lw_a(:), lw_g(:), lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -74,14 +73,14 @@ contains
 
   end subroutine ts_Lewis_scatter
 
-  subroutine lw_grey_updown(nlay, nlev, bl, be_int, tau_IR, w0, g, mu_z, lw_up, lw_down)
+  subroutine lw_grey_updown(nlay, nlev, bl, be_int, tau_IR, w0, g, lw_up, lw_down)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: tau_IR
     real(dp), dimension(nlay), intent(in) :: bl, g, w0
-    real(dp), intent(in) :: be_int, mu_z
+    real(dp), intent(in) :: be_int
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down

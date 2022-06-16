@@ -1,6 +1,6 @@
 &FMS_RC_nml
 
-ts_scheme = 'Shortchar'
+ts_scheme = 'Shortchar_Bezier'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 
@@ -48,6 +48,5 @@ Tstrat_init = 50.0
 cp_surf = 1e7
 sw_a_surf = 0.0
 lw_a_surf = 0.0
-
 
 /

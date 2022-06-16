@@ -1,3 +1,5 @@
+!!! Work in progress
+
 !!!
 ! Elspeth KH Lee - Mar 2022 : Initial version
 ! sw: Adding layer method with scattering

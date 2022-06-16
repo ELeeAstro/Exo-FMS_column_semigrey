@@ -1,5 +1,5 @@
 
-!!! Work in progress
+!!! Work in progress - do not use!
 
 module ts_Heng_ITS_mod
   use, intrinsic :: iso_fortran_env

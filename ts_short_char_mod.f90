@@ -62,14 +62,14 @@ module ts_short_char_mod
 
 contains
 
-  subroutine ts_short_char(Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+  subroutine ts_short_char(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
     & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     implicit none
 
     !! Input variables
     logical, intent(in) :: Bezier
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0, Tint, AB, Ts, sw_a_surf
+    real(dp), intent(in) :: F0, Tint, AB, sw_a_surf
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe, mu_z
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
@@ -98,13 +98,10 @@ contains
 
       ! Perform interpolation using Bezier peicewise polynomial interpolation
       do i = 2, nlay-1
-        !call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))
         call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))
         Te(i) = 10.0_dp**(Te(i))
         !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
       end do
-      !stop
-      !call bezier_interp(lpl(nlay-2:nlay), lTl(nlay-2:nlay), 3, lpe(nlay), Te(nlay))
       call bezier_interp(lpl(nlay-2:nlay), lTl(nlay-2:nlay), 3, lpe(nlay), Te(nlay))
       Te(nlay) = 10.0_dp**(Te(nlay))
     else
@@ -187,7 +184,7 @@ contains
 
         e1i_del = e1i/del ! The equivalent to the linear in tau term
 
-        if (dtau(k) < 1.0e-6_dp) then
+        if (del <= 1.0e-6_dp) then
           ! If we are in very low optical depth regime, then use an isothermal approximation
           Am(k) = (0.5_dp*(be(k+1) + be(k)) * e0i)/be(k)
           Bm(k) = 0.0_dp
@@ -245,11 +242,11 @@ contains
 
     !! Work variables
     integer :: k
-    real(dp) :: lamtau, e_lamtau, lim, arg, apg, amg
+    real(dp) :: lamtau, e_lamtau, arg, apg, amg
     real(dp), dimension(nlev) ::  w, g, f
     real(dp), dimension(nlev) :: tau_Ve_s
     real(dp), dimension(nlay) :: tau
-    real(dp), dimension(nlev) :: tau_s, w_s, f_s, g_s
+    real(dp), dimension(nlev) :: tau_s, w_s, g_s
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
     real(dp), dimension(nlev) :: R_b, T_b, R, T
     real(dp), dimension(nlev) :: Tf
@@ -358,7 +355,7 @@ contains
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: lxval, ly1, ly2, lx1, lx2
+    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
@@ -370,46 +367,6 @@ contains
 
   end subroutine linear_log_interp
 
-  !lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i)
-  subroutine bezier_interp_2(xi, yi, ni, x, y)
-    implicit none
-
-    integer, intent(in) :: ni
-    real(dp), dimension(ni), intent(in) :: xi, yi
-    real(dp), intent(in) :: x
-    real(dp), intent(out) :: y
-
-    real(dp) :: xc, dx, dx1, dy, dy1, w, yc0, yc1, t, wlim, wlim1, yc
-
-    !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
-    dx = xi(2) - xi(1)
-    dx1 = xi(3) - xi(2)
-    dy = yi(2) - yi(1)
-    dy1 = yi(3) - yi(2)
-
-    w = dx1/(dx + dx1)
-    yc0 = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
-    !t = (x - xi(1))/dx
-
-    w = dx/(dx + dx1)
-    yc1 = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
-    t = (x - xi(2))/(dx1)
-
-    if ((w*dy/dx + (1.0_dp - w)*dy1/dx1)*(w*dy1/dx1 + (1.0_dp - w)*dy/dx) <= 0.0_dp) then
-      yc0 = yi(2)
-      yc1 = yi(2)
-    end if
-
-
-    yc = (yc1 + yc0)/2.0_dp
-
-    !y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
-
-    y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
-
-
-  end subroutine bezier_interp_2
-
   subroutine bezier_interp(xi, yi, ni, x, y)
     implicit none
 
@@ -418,7 +375,7 @@ contains
     real(dp), intent(in) :: x
     real(dp), intent(out) :: y
 
-    real(dp) :: xc, dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+    real(dp) :: dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
 
     !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
     dx = xi(2) - xi(1)
