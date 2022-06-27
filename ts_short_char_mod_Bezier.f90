@@ -58,7 +58,7 @@ module ts_short_char_mod_bezier
   !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
 
   public :: ts_short_char_Bezier
-  private :: lw_grey_updown_bezier, sw_grey_updown_adding, linear_log_interp, bezier_interp, bezier_interp_yc
+  private :: lw_grey_updown_bezier, sw_grey_updown_adding, linear_interp, bezier_interp, bezier_interp_yc
 
 contains
 
@@ -88,33 +88,32 @@ contains
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
 
+    ! Log the layer values and pressure edges for more accurate interpolation
+    lTl(:) = log10(Tl(:))
+    lpl(:) = log10(pl(:))
+    lpe(:) = log10(pe(:))
+
     !! Find temperature at layer edges through interpolation and extrapolation
     if (Bezier .eqv. .True.) then
-
-      ! Log the layer values and pressure edges for more accurate interpolation
-      lTl(:) = log10(Tl(:))
-      lpl(:) = log10(pl(:))
-      lpe(:) = log10(pe(:))
-
       ! Perform interpolation using Bezier peicewise polynomial interpolation
       do i = 2, nlay-1
         call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))
-        Te(i) = 10.0_dp**(Te(i))
         !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
       end do
       call bezier_interp(lpl(nlay-2:nlay), lTl(nlay-2:nlay), 3, lpe(nlay), Te(nlay))
-      Te(nlay) = 10.0_dp**(Te(nlay))
     else
       ! Perform interpolation using linear interpolation
       do i = 2, nlay
-        call linear_log_interp(pe(i), pl(i-1), pl(i), Tl(i-1), Tl(i), Te(i))
+        call linear_interp(lpe(i), lpl(i-1), lpl(i), lTl(i-1), lTl(i), Te(i))
         !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
       end do
     end if
 
     ! Edges are linearly interpolated
-    Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
-    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
+    Te(1) = (log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/10.0_dp**Te(2)))
+    Te(nlev) = (log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/10.0_dp**Te(nlay)))
+    ! De-log the temperature levels (edges)
+    Te(:) = 10.0_dp**Te(:)
 
     !! Shortwave flux calculation
     if (mu_z(nlev) > 0.0_dp) then
@@ -157,8 +156,7 @@ contains
 
     !! Work variables and arrays
     integer :: k, m
-    real(dp) :: del3
-    real(dp), dimension(nlay) :: dtau, del, edel, del2
+    real(dp), dimension(nlay) :: dtau, del, edel, del2, del3, edel_lim
     real(dp), dimension(nlay) :: tau_mid, ltau_mid
     real(dp), dimension(nlev) :: lbe, ltau
     real(dp), dimension(nlay) :: Ak, Bk, Gk, Ck
@@ -174,11 +172,10 @@ contains
 
     ! Find the source function at Bezier control point and the center of optical depth space of each layer
     call bezier_interp_yc(ltau(1:3), lbe(1:3), 3, ltau_mid(1), Ck(1))
-    Ck(1) = 10.0_dp**(Ck(1))
     do k = 2, nlay
       call bezier_interp_yc(ltau(k-1:k+1), lbe(k-1:k+1), 3, ltau_mid(k), Ck(k))
-      Ck(k) = 10.0_dp**(Ck(k))
     end do
+    Ck(:) = 10.0_dp**Ck(:)
 
     ! Zero the total flux arrays
     lw_up(:) = 0.0_dp
@@ -189,26 +186,25 @@ contains
 
       del(:) = dtau(:)/uarr(m)
       del2(:) = del(:)**2
+      del3(:) = del(:)**3
       edel(:) = exp(-del(:))
+      edel_lim(:) = &
+      & max(1.0_dp - del(:) + del2(:)/2.0_dp - del3(:)/6.0_dp, 0.0_dp)/edel(:)
 
       !! Prepare loop
-      do k = 1, nlay
-        !  de la Cruz Rodriguez and Piskunov 2013 Bezier interpolant parameters
-        if (dtau(k) <= 1.0e-3_dp) then
-          ! If we are in very low optical depth regime,
-          ! then use a Taylor expansion following [CR&P13]
-          del3 = del(k)**3
-          Ak(k) = del(k)/3.0_dp - del2(k)/12.0_dp + del3/60.0_dp
-          Bk(k) = del(k)/3.0_dp - del2(k)/4.0_dp + del3/10.0_dp
-          Gk(k) = del(k)/3.0_dp - del2(k)/6.0_dp + del3/20.0_dp
-        else
-          ! Use Bezier interpolants
-          Ak(k) = (2.0_dp + del2(k) - 2.0_dp*del(k) - 2.0_dp*edel(k))/del2(k)
-          Bk(k) = (2.0_dp - (2.0_dp + 2.0_dp*del(k) + del2(k))*edel(k))/del2(k)
-          Gk(k) = (2.0_dp*del(k) - 4.0_dp + (2.0_dp*del(k) + 4.0_dp)*edel(k))/del2(k)
-        end if
-
-      end do
+      ! de la Cruz Rodriguez and Piskunov 2013 Bezier interpolant parameters
+      where (edel_lim(:) > 0.999_dp)
+        ! If we are in very low optical depth regime,
+        ! then use a Taylor expansion following [CR&P13]
+        Ak(:) = del(:)/3.0_dp - del2(:)/12.0_dp + del3(:)/60.0_dp
+        Bk(:) = del(:)/3.0_dp - del2(:)/4.0_dp + del3(:)/10.0_dp
+        Gk(:) = del(:)/3.0_dp - del2(:)/6.0_dp + del3(:)/20.0_dp
+      elsewhere
+        ! Use Bezier interpolants
+        Ak(:) = (2.0_dp + del2(:) - 2.0_dp*del(:) - 2.0_dp*edel(:))/del2(:)
+        Bk(:) = (2.0_dp - (2.0_dp + 2.0_dp*del(:) + del2(:))*edel(:))/del2(:)
+        Gk(:) = (2.0_dp*del(:) - 4.0_dp + (2.0_dp*del(:) + 4.0_dp)*edel(:))/del2(:)
+      end where
 
       !! Begin two-stream loops
       !! Perform downward loop first
@@ -362,22 +358,19 @@ contains
 
   end subroutine sw_grey_updown_adding
 
-  ! Perform linear interpolation in log10 space
-  subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)
+  ! Perform linear interpolation
+  subroutine linear_interp(xval, x1, x2, y1, y2, yval)
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
-    ly1 = log10(y1); ly2 = log10(y2)
+    norm = 1.0_dp / (x2 - x1)
 
-    norm = 1.0_dp / log10(x2/x1)
+    yval = (y1 * (x2 - xval) + y2 * (xval - x1)) * norm
 
-    yval = 10.0_dp**((ly1 * log10(x2/xval) + ly2 * log10(xval/x1)) * norm)
-
-  end subroutine linear_log_interp
+  end subroutine linear_interp
 
   subroutine bezier_interp_yc(xi, yi, ni, x, yc)
     implicit none
