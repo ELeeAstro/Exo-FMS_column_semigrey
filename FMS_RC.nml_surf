@@ -1,0 +1,54 @@
+!! Surface evolution case following parameters in Heng et al. (2011)
+
+&FMS_RC_nml
+
+ts_scheme = 'Isothermal'
+opac_scheme = 'Heng'
+adj_scheme = 'Ray_dry'
+
+nlay = 54
+a_sh = 'Hybrid_sigma_grid_a_54.txt'
+b_sh = 'Hybrid_sigma_grid_b_54.txt'
+
+pref = 1e5
+
+t_step = 60.0
+nstep = 1000000
+Rd_air = 287.04
+cp_air = 1004.64
+grav = 9.8
+mu_z = 0.5
+Tirr = 358.67
+Tint = 0.0
+
+Bezier = .False.
+
+k_V = 1.96e-5
+k_IR = 5.88e-4
+AB = 0.0
+fl = 0.1
+met = 0.0
+
+ns = 2.0
+nl = 4.0
+
+sw_ac = 0.0
+sw_gc = 0.0
+lw_ac = 0.0
+lw_gc = 0.0
+
+zcorr = .False.
+zcorr_meth = 2
+radius = 6.371e6
+
+iIC = 6
+corr = .False.
+
+surf = .True.
+Ts_init = 264.0
+Tstrat_init = 264.0
+cp_surf = 1e7
+sw_a_surf = 0.0
+lw_a_surf = 0.0
+
+/

@@ -8,7 +8,7 @@
 !     Cons: No lw scattering
 !!!
 
-module ts_short_char_mod_bezier
+module ts_short_char_mod_Bezier
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -58,25 +58,25 @@ module ts_short_char_mod_bezier
   !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
 
   public :: ts_short_char_Bezier
-  private :: lw_grey_updown_bezier, sw_grey_updown_adding, linear_interp, bezier_interp, bezier_interp_yc
+  private :: lw_grey_updown_Bezier, sw_grey_updown_adding, linear_interp, Bezier_interp, Bezier_interp_yc
 
 contains
 
-  subroutine ts_short_char_Bezier(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
+  subroutine ts_short_char_Bezier(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
+    & mu_z, F0, Tint, AB, sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     implicit none
 
     !! Input variables
-    logical, intent(in) :: Bezier
+    logical, intent(in) :: Bezier, surf
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0, Tint, AB, sw_a_surf
+    real(dp), intent(in) :: Ts, F0, Tint, AB, sw_a_surf, lw_a_surf
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe, mu_z
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
     real(dp), dimension(nlay), intent(in) :: sw_a, sw_g
 
     !! Output variables
-    real(dp), intent(out) :: olr, asr
+    real(dp), intent(out) :: olr, asr, net_Fs
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
@@ -126,14 +126,22 @@ contains
 
     !! Longwave two-stream flux calculation
     be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
-    be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
+    if (surf .eqv. .True.) then
+      be_int = (sb * Ts**4)/pi
+    else
+      be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
+    end if
 
-    call lw_grey_updown_bezier(nlay, nlev, be, be_int, tau_IRe(:), lw_up(:), lw_down(:))
+    call lw_grey_updown_Bezier(surf, nlay, nlev, be, be_int, lw_a_surf, tau_IRe(:), lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
     net_F(:) = lw_net(:) + sw_net(:)
+
+    !! Net surface flux (for surface temperature evolution)
+    !! We have to define positive as downward (heating) and cooling (upward) in this case
+    net_Fs = sw_down(nlev) + lw_down(nlev) - lw_up(nlev)
 
     !! Output the olr
     olr = lw_up(1)
@@ -143,13 +151,14 @@ contains
 
   end subroutine ts_short_char_Bezier
 
-  subroutine lw_grey_updown_bezier(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
+  subroutine lw_grey_updown_Bezier(surf, nlay, nlev, be, be_int, lw_a_surf, tau_IRe, lw_up, lw_down)
     implicit none
 
     !! Input variables
+    logical, intent(in) :: surf
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: be, tau_IRe
-    real(dp), intent(in) :: be_int
+    real(dp), intent(in) :: be_int, lw_a_surf
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
@@ -215,10 +224,16 @@ contains
       end do
 
       !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here the lw_a_surf is assumed to be = 1 as per the definition
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up_g(nlev) = lw_down_g(nlev) + be_int
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(nlev) = lw_down_g(nlev)*lw_a_surf + be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(nlev) = lw_down_g(nlev) + be_int
+      end if
+
       do k = nlay, 1, -1
         lw_up_g(k) = lw_up_g(k+1)*edel(k)  + Ak(k)*be(k) + Bk(k)*be(k+1) + Gk(k)*Ck(k)! TS intensity
         !print*, k, lw_up_g(k), lw_down_g(k), Ak(k), Bk(k), Gk(k)
@@ -234,7 +249,7 @@ contains
     lw_down(:) = twopi * lw_down(:)
     lw_up(:) = twopi * lw_up(:)
 
-  end subroutine lw_grey_updown_bezier
+  end subroutine lw_grey_updown_Bezier
 
   subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
@@ -372,7 +387,7 @@ contains
 
   end subroutine linear_interp
 
-  subroutine bezier_interp_yc(xi, yi, ni, x, yc)
+  subroutine Bezier_interp_yc(xi, yi, ni, x, yc)
     implicit none
 
     integer, intent(in) :: ni
@@ -410,9 +425,9 @@ contains
       yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
     end if
 
-  end subroutine bezier_interp_yc
+  end subroutine Bezier_interp_yc
 
-  subroutine bezier_interp(xi, yi, ni, x, y)
+  subroutine Bezier_interp(xi, yi, ni, x, y)
     implicit none
 
     integer, intent(in) :: ni
@@ -454,6 +469,6 @@ contains
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
     end if
 
-  end subroutine bezier_interp
+  end subroutine Bezier_interp
 
-end module ts_short_char_mod_bezier
+end module ts_short_char_mod_Bezier

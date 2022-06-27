@@ -58,25 +58,25 @@ module ts_short_char_mod_linear
   !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
 
   public :: ts_short_char_linear
-  private :: lw_grey_updown_linear, sw_grey_updown_adding, linear_log_interp, bezier_interp
+  private :: lw_grey_updown_linear, sw_grey_updown_adding, linear_interp, Bezier_interp
 
 contains
 
-  subroutine ts_short_char_linear(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, &
-    & mu_z, F0, Tint, AB, sw_a, sw_g, sw_a_surf, net_F, olr, asr)
+  subroutine ts_short_char_linear(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
+    & mu_z, F0, Tint, AB, sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     implicit none
 
     !! Input variables
-    logical, intent(in) :: Bezier
+    logical, intent(in) :: Bezier, surf
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0, Tint, AB, sw_a_surf
+    real(dp), intent(in) :: Ts, F0, Tint, AB, sw_a_surf, lw_a_surf
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe, mu_z
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
     real(dp), dimension(nlay), intent(in) :: sw_a, sw_g
 
     !! Output variables
-    real(dp), intent(out) :: olr, asr
+    real(dp), intent(out) :: olr, asr, net_Fs
     real(dp), dimension(nlev), intent(out) :: net_F
 
     !! Work variables
@@ -88,33 +88,32 @@ contains
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
 
+    ! Log the layer values and pressure edges for more accurate interpolation
+    lTl(:) = log10(Tl(:))
+    lpl(:) = log10(pl(:))
+    lpe(:) = log10(pe(:))
+
     !! Find temperature at layer edges through interpolation and extrapolation
     if (Bezier .eqv. .True.) then
-
-      ! Log the layer values and pressure edges for more accurate interpolation
-      lTl(:) = log10(Tl(:))
-      lpl(:) = log10(pl(:))
-      lpe(:) = log10(pe(:))
-
       ! Perform interpolation using Bezier peicewise polynomial interpolation
       do i = 2, nlay-1
         call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))
-        Te(i) = 10.0_dp**(Te(i))
         !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
       end do
       call bezier_interp(lpl(nlay-2:nlay), lTl(nlay-2:nlay), 3, lpe(nlay), Te(nlay))
-      Te(nlay) = 10.0_dp**(Te(nlay))
     else
       ! Perform interpolation using linear interpolation
       do i = 2, nlay
-        call linear_log_interp(pe(i), pl(i-1), pl(i), Tl(i-1), Tl(i), Te(i))
+        call linear_interp(lpe(i), lpl(i-1), lpl(i), lTl(i-1), lTl(i), Te(i))
         !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
       end do
     end if
 
     ! Edges are linearly interpolated
-    Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
-    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
+    Te(1) = (log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/10.0_dp**Te(2)))
+    Te(nlev) = (log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/10.0_dp**Te(nlay)))
+    ! De-log the temperature levels (edges)
+    Te(:) = 10.0_dp**Te(:)
 
     !! Shortwave flux calculation
     if (mu_z(nlev) > 0.0_dp) then
@@ -127,14 +126,22 @@ contains
 
     !! Longwave two-stream flux calculation
     be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
-    be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
+    if (surf .eqv. .True.) then
+      be_int = (sb * Ts**4)/pi
+    else
+      be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
+    end if
 
-    call lw_grey_updown_linear(nlay, nlev, be, be_int, tau_IRe(:), lw_up(:), lw_down(:))
+    call lw_grey_updown_linear(surf, nlay, nlev, be, be_int, lw_a_surf, tau_IRe(:), lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
     sw_net(:) = sw_up(:) - sw_down(:)
     net_F(:) = lw_net(:) + sw_net(:)
+
+    !! Net surface flux (for surface temperature evolution)
+    !! We have to define positive as downward (heating) and cooling (upward) in this case
+    net_Fs = sw_down(nlev) + lw_down(nlev) - lw_up(nlev)
 
     !! Output the olr
     olr = lw_up(1)
@@ -144,13 +151,14 @@ contains
 
   end subroutine ts_short_char_linear
 
-  subroutine lw_grey_updown_linear(nlay, nlev, be, be_int, tau_IRe, lw_up, lw_down)
+  subroutine lw_grey_updown_linear(surf, nlay, nlev, be, be_int, lw_a_surf, tau_IRe, lw_up, lw_down)
     implicit none
 
     !! Input variables
+    logical, intent(in) :: surf
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: be, tau_IRe
-    real(dp), intent(in) :: be_int
+    real(dp), intent(in) :: be_int, lw_a_surf
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
@@ -204,10 +212,15 @@ contains
       end do
 
       !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here the lw_a_surf is assumed to be = 1 as per the definition
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up_g(nlev) = lw_down_g(nlev) + be_int
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(nlev) = lw_down_g(nlev)*lw_a_surf + be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(nlev) = lw_down_g(nlev) + be_int
+      end if
 
       do k = nlay, 1, -1
         lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
@@ -347,24 +360,21 @@ contains
 
   end subroutine sw_grey_updown_adding
 
-  ! Perform linear interpolation in log10 space
-  subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)
+  ! Perform linear interpolation
+  subroutine linear_interp(xval, x1, x2, y1, y2, yval)
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
-    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
-    ly1 = log10(y1); ly2 = log10(y2)
+    norm = 1.0_dp / (x2 - x1)
 
-    norm = 1.0_dp / log10(x2/x1)
+    yval = (y1 * (x2 - xval) + y2 * (xval - x1)) * norm
 
-    yval = 10.0_dp**((ly1 * log10(x2/xval) + ly2 * log10(xval/x1)) * norm)
+  end subroutine linear_interp
 
-  end subroutine linear_log_interp
-
-  subroutine bezier_interp(xi, yi, ni, x, y)
+  subroutine Bezier_interp(xi, yi, ni, x, y)
     implicit none
 
     integer, intent(in) :: ni
@@ -406,6 +416,6 @@ contains
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
     end if
 
-  end subroutine bezier_interp
+  end subroutine Bezier_interp
 
 end module ts_short_char_mod_linear

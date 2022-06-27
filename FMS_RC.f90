@@ -281,12 +281,12 @@ program Exo_FMS_RC
       & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr)
     case('Shortchar_linear')
       ! Short characteristics method without LW scattering
-      call ts_short_char_linear(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-      & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
+      call ts_short_char_linear(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
+      & mu_z_eff, F0, Tint, AB, sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     case('Shortchar_Bezier')
       ! Short characteristics method without LW scattering
-      call ts_short_char_Bezier(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-      & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
+      call ts_short_char_Bezier(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
+      & mu_z_eff, F0, Tint, AB, sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     case('Heng')
       ! Heng flux method without LW scattering
       tau_IRl(:) = fl*tau_IRref*(pl(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pl(:)/pref)**2  ! Optical depth at layer midpoints
@@ -395,7 +395,7 @@ program Exo_FMS_RC
   end do
   close(u)
 
-  print*, nstep, 'steps took: '
+  print*, n, 'steps took: '
   print '("Time = ",f8.3," seconds.")', finish-start
 
 
