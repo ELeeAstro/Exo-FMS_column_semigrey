@@ -3,7 +3,7 @@
 Major Update History
  - May 2021 - initial models
  - Dec 2021 - major overhual
- - Jun 2022 - Improvements + Bezier
+ - Jun 2022 - Improvements + Bezier short char.
 
 Elspeth KH Lee - Dec 2021
 
@@ -26,7 +26,7 @@ Some compiler options for gfortran, nvfortran and ifort are provided in the make
 This code performs various two-stream approaches from the literature in a semi-grey context:
 1. Isothermal layer approximation
 2. Toon et al. method (Scattering and non-scattering versions)
-3. Short Characteristics method w. linear and Bezier interpolants
+3. Short Characteristics method (w. linear and Bezier interpolants)
 4. Heng et al. method
 5. Neil Lewis's scattering code, following Pierrehumbert (2010)
 6. Mendonca et al. method
@@ -35,7 +35,7 @@ This code performs various two-stream approaches from the literature in a semi-g
 You can also see the header comments in the source code for some additional information.
 
 For the shortwave fluxes, for methods that do not contain a shortwave scattering mode we include the 'adding method' (Mendonca et al. 2015 + references).
-We detect if any albedo is present in the column, and peform the adding method to calculate the scattered flux, otherwise if there is no albedo only the direct beam is used.
+We detect if any albedo is present in the column, and perform the adding method to calculate the scattered flux, otherwise if there is no albedo only the direct beam is used.
 
 This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
 as they would perform inside a GCM setting. This is also useful to see differences in each method and their various approximations.
@@ -51,8 +51,8 @@ ts_scheme: \
 'Isothermal_2' - Isothermal ts method - high optical depth version \
 'Toon' - Toon et al. ts method \
 'Toon_scatter' - Toon et al. ts method with scattering \
-'Shortchar' -  Short characteristics method  with linear interpolants \
-'Shortchar_Bezier' -  Short characteristics method with Bezier interpolants \
+'Shortchar_linear' - Short characteristics method  with linear interpolants \
+'Shortchar_Bezier' - Short characteristics method with Bezier interpolants \
 'Heng' - Heng et al. method \
 'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
 'Mendonca' - Mendonca et al. method \

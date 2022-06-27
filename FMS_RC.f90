@@ -18,7 +18,7 @@ program Exo_FMS_RC
   use ts_Toon_scatter_mod, only : ts_Toon_scatter
   use ts_Heng_mod, only : ts_Heng
   !use ts_Heng_ITS_mod, only: ts_Heng_ITS
-  use ts_short_char_mod, only : ts_short_char
+  use ts_short_char_mod_linear, only : ts_short_char_linear
   use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
   use ts_Mendonca_mod, only : ts_Mendonca
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
@@ -279,9 +279,9 @@ program Exo_FMS_RC
       ! Toon method with SW/LW scattering
       call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr)
-    case('Shortchar')
+    case('Shortchar_linear')
       ! Short characteristics method without LW scattering
-      call ts_short_char(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
+      call ts_short_char_linear(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
       & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
     case('Shortchar_Bezier')
       ! Short characteristics method without LW scattering
