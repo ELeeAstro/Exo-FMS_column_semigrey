@@ -167,7 +167,7 @@ contains
     tau_mid(:) = (tau_IRe(2:) + tau_IRe(1:nlay))/2.0_dp
 
     ltau(:) = log10(tau_IRe(:))
-    ltau_mid(:) = log10(ltau_mid(:))
+    ltau_mid(:) = log10(tau_mid(:))
     lbe(:) = log10(be(:))
 
     ! Find the source function at Bezier control point and the center of optical depth space of each layer
