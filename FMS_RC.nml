@@ -3,29 +3,29 @@
 
 &FMS_RC_nml
 
-ts_scheme = 'Shortchar_Bezier'
-opac_scheme = 'Constant'
+ts_scheme = 'Shortchar_Bezier_bg'
+opac_scheme = 'Boukrouche'
 adj_scheme = 'Ray_dry'
 
-nlay = 54
-a_sh = 'Hybrid_sigma_grid_a_54.txt'
-b_sh = 'Hybrid_sigma_grid_b_54.txt'
+nlay = 47
+a_sh = 'Hybrid_sigma_grid_a_47.txt'
+b_sh = 'Hybrid_sigma_grid_b_47.txt'
 
-pref = 1e8
+pref = 10e5
 
 t_step = 60.0
-nstep = 1000000
-Rd_air = 3556.8
-cp_air = 1.3e4
-grav = 10.0
+nstep = 100
+Rd_air = 461.50
+cp_air = 1864.0
+grav = 10.807314000000002
 mu_z = 0.1
-Tirr = 1000.0
-Tint = 100.0
+Tirr = 402.80 ! ((1.0 - 0.175) * 0.75*L_Sun / ( 4. * pi * (0.723*AU)**2. )
+Tint = 0.0
 
 Bezier = .True.
 
-k_V = 6e-4
-k_IR = 1e-3
+k_V = 6e-2
+k_IR = 1e-1
 AB = 0.0
 fl = 1.0
 met = 0.0
@@ -42,14 +42,23 @@ zcorr = .False.
 zcorr_meth = 2
 radius = 7.1492e7
 
-iIC = 3
+iIC = 6
 corr = .False.
 
-surf = .False.
-Ts_init = 288.0
+surf = .True.
+Ts_init = 300.0
 Tstrat_init = 50.0
-cp_surf = 1e7
+cp_surf = 1e5
 sw_a_surf = 0.0
 lw_a_surf = 0.0
+
+n_bands = 6
+cloud_toggle = .False.
+cloud_base = 260e5
+cloud_top = 260e-3
+N_c = 60e6
+sigma = 1.0
+star = 'Sun'
+nb_Ts = 1 !57
 
 /

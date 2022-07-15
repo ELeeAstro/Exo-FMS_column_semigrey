@@ -1,0 +1,4 @@
+ExoMol POKAZATEL line list opacity of water vapor, from https://chaldene.unibe.ch/data/Opacity3/1H2-16O__POKAZATEL_e0DAT/
+P_list = numpy.logspace(-3.,8.,100)
+T_list = numpy.linspace(50.,2900.,100)
+Wavenumber range from 1 to 49239 cm-1 with a step of 1 cm-1.

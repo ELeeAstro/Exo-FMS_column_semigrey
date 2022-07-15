@@ -1,0 +1,7 @@
+MT_CKD 3.4 self-broadened continuum of water vapor, from https://github.com/AER-RC/mt-ckd
+P_list = numpy.logspace(-3.,8.,100)
+T_list = numpy.linspace(50.,2900.,100)
+Wavenumber range from 10 to 10000 cm-1 with a step of 10 cm-1.
+Reference P and T:
+P0 = 1013000 Pa
+T0 = 260.00  K

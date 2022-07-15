@@ -49,7 +49,7 @@ module k_Rosseland_mod
   real(dp), parameter :: c11_vl = 0.8321_dp, c11_vh = 0.8321_dp
 
   !private
-  public :: k_Ross_Freedman, gam_Parmentier, Bond_Parmentier, k_Ross_TK19, k_Ross_Valencia
+  public :: k_Ross_Freedman, gam_Parmentier, Bond_Parmentier, k_Ross_TK19, k_Ross_Valencia, k_Ross_Boukrouche
 
 contains
 
@@ -176,6 +176,195 @@ contains
     k_IR = min(k_IR,1.0e30_dp)
 
   end subroutine k_Ross_Valencia
+
+  subroutine k_Ross_Boukrouche(nlay,Tmid,pmid,n_bands,dew_point,cloud_toggle,cloud_base,cloud_top,sw_ac,sw_gc,lw_ac,lw_gc,&
+                               band_opacity,q_c,N_c,sigma,sw_a,sw_g,lw_a,lw_g)
+    use linspace_module,         only: linspace
+    use interp_mod,              only: bilinear_interp
+    use cloud_mod,               only: optical_properties
+    use read_opacity_tables_mod, only: nbPT, matrixIR,matrixW1,matrixW2,matrixSW,matrixUV,matrixVIS,matrixVIS1,matrixVIS2
+    implicit none
+    integer :: i, b_index, cloud_base_i, cloud_top_i
+    real(dp) :: pL(nbPT), TL(nbPT)
+    real(dp) :: p_closest, T_closest, p_closest_lower, p_closest_upper, T_closest_lower, T_closest_upper
+    real(dp), dimension(2) :: p2, T2
+    real(dp), dimension(2,2) :: matrixIR_22,matrixW1_22,matrixW2_22,matrixSW_22,matrixUV_22,matrixVIS_22,matrixVIS1_22,&
+                                matrixVIS2_22
+    integer, intent(in) :: nlay, n_bands
+    real(dp), dimension(nlay), intent(in) :: pmid,Tmid,dew_point,q_c
+    logical, intent(in) :: cloud_toggle
+    real(dp), intent(in) :: cloud_base, cloud_top, sw_ac, sw_gc, lw_ac, lw_gc, N_c, sigma
+    real(dp), dimension(n_bands,nlay), intent(out) :: band_opacity
+    real(dp), dimension(nlay), intent(out) :: sw_a, sw_g, lw_a, lw_g
+    real(dp), dimension(n_bands,nlay) :: cloud_opacity
+    real(dp), dimension(nlay) :: aa, gg, kk
+    real(kind=dp) :: SG_tweak_lw, SG_tweak_sw
+
+    !----------------------------------- Reading opacity tables -----------------------------------
+    ! Interpolated tables of size 100x100.
+    ! Regions SW and IR: POKAZATEL
+    ! Windows W1 and W2: MT_CKD 3.0
+    ! P range: [1e-8 , 1e3] bar = [1e-3 , 1e8] Pa. T range: [150 , 2900] K.
+
+    ! P and T arrays corresponding to the tables
+    call linspace(pL,-3.0_dp,8.0_dp,nbPT)
+    pL = 10.0_dp**pL ! numpy.logspace
+    call linspace(TL,150.0_dp,2900.0_dp,nbPT)
+
+    ! Fill
+    do i = 1,nlay
+      T_closest = minloc(abs(TL-(TL/TL)*Tmid(i)), DIM=1) ! returns the index of the closest element to Tmid(i) in TL
+
+      if (TL(T_closest) < Tmid(i)) then ! lower neighbor
+        T_closest_lower = T_closest
+        T_closest_upper = T_closest+1
+      else if (TL(T_closest) > Tmid(i)) then ! upper neighbor
+        T_closest_upper = T_closest
+        T_closest_lower = T_closest-1
+      else if (TL(T_closest) == Tmid(i)) then
+      end if
+
+      p_closest = minloc(abs(pL-(pL/pL)*pmid(i)), DIM=1)
+
+      if (pL(p_closest) < pmid(i)) then ! lower neighbor
+        p_closest_lower = p_closest
+        p_closest_upper = p_closest+1
+      else if (pL(p_closest) > pmid(i)) then ! upper neighbor
+        p_closest_upper = p_closest
+        p_closest_lower = p_closest-1
+      else if (pL(p_closest) == pmid(i)) then
+      end if
+
+      T2            = (/ TL(T_closest_lower), TL(T_closest_upper) /)
+      p2            = (/ pL(p_closest_lower), pL(p_closest_upper) /)
+
+      matrixIR_22   = matrixIR( p_closest_lower:p_closest_upper,T_closest_lower:T_closest_upper )
+      matrixW1_22   = matrixW1( p_closest_lower:p_closest_upper,T_closest_lower:T_closest_upper )
+      matrixW2_22   = matrixW2( p_closest_lower:p_closest_upper,T_closest_lower:T_closest_upper )
+
+      ! Interpolate tables further to avoid vertical jumps in opacity and in net flux
+      call bilinear_interp(pmid(i),Tmid(i),p2,T2,matrixIR_22,band_opacity(1,i))
+      call bilinear_interp(pmid(i),Tmid(i),p2,T2,matrixW1_22,band_opacity(2,i))
+      call bilinear_interp(pmid(i),Tmid(i),p2,T2,matrixW2_22,band_opacity(3,i))
+
+      ! The interpolation works only if Tmid(i) stays within the P/T range of the tables
+      if ( (Tmid(i) .gt. maxval(TL)) .or. (Tmid(i) .lt. minval(TL))&
+      .or. (pmid(i) .gt. maxval(pL)) .or. (pmid(i) .lt. minval(pL)) ) then
+        band_opacity(1,i) = matrixIR(p_closest,T_closest)
+        band_opacity(2,i) = matrixIR(p_closest,T_closest)
+        band_opacity(3,i) = matrixIR(p_closest,T_closest)
+      end if
+
+      ! Tweaking factors
+      SG_tweak_lw = 0d0!1d5
+      !band_opacity(1,i) = SG_tweak_lw !1e-3 !band_opacity(1,i) !*0.0
+      !band_opacity(2,i) = SG_tweak_lw !1e-3 !band_opacity(2,i)!*0.0 ! 10bar: 1, 260bar: 7d-2
+      !band_opacity(3,i) = SG_tweak_lw !1e-3 !band_opacity(3,i)!*0.0 ! 10bar: 1, 260bar: 7d-3
+
+      band_opacity(1,i) = band_opacity(1,i)*1.4d-3
+      band_opacity(2,i) = band_opacity(2,i)*7d-2
+      band_opacity(3,i) = band_opacity(3,i)*7d-3
+
+      if (n_bands .eq. 4) then
+        matrixSW_22 = matrixSW( p_closest_lower:p_closest_upper,T_closest_lower:T_closest_upper )
+
+        call bilinear_interp(pmid(i),Tmid(i),p2,T2,matrixSW_22,band_opacity(4,i))
+
+        if ( (Tmid(i) .gt. maxval(TL)) .or. (Tmid(i) .lt. minval(TL))&
+        .or. (pmid(i) .gt. maxval(pL)) .or. (pmid(i) .lt. minval(pL)) ) then
+          band_opacity(4,i) = matrixSW(p_closest,T_closest)
+        end if
+
+        band_opacity(4,i) = band_opacity(4,i)*3d-2 ! 10bar: 3d-2 , 260bar: 1d-3
+
+      elseif (n_bands .eq. 5) then
+        matrixUV_22  = matrixUV ( p_closest_lower:p_closest_upper,T_closest_lower:T_closest_upper )
+        matrixVIS_22 = matrixVIS( p_closest_lower:p_closest_upper,T_closest_lower:T_closest_upper )
+
+        call bilinear_interp(pmid(i),Tmid(i),p2,T2,matrixUV_22,band_opacity(4,i))
+        call bilinear_interp(pmid(i),Tmid(i),p2,T2,matrixVIS_22,band_opacity(5,i))
+
+        if ( (Tmid(i) .gt. maxval(TL)) .or. (Tmid(i) .lt. minval(TL))&
+        .or. (pmid(i) .gt. maxval(pL)) .or. (pmid(i) .lt. minval(pL)) ) then
+          band_opacity(4,i) = matrixUV(p_closest,T_closest)
+          band_opacity(5,i) = matrixVIS(p_closest,T_closest)
+        end if
+
+        !band_opacity(4,i) = band_opacity(4,i)*0.0
+        !band_opacity(5,i) = band_opacity(5,i)*0.0
+      elseif (n_bands .eq. 6) then
+        matrixUV_22   = matrixUV  ( p_closest_lower:p_closest_upper,T_closest_lower:T_closest_upper )
+        matrixVIS1_22 = matrixVIS1( p_closest_lower:p_closest_upper,T_closest_lower:T_closest_upper )
+        matrixVIS2_22 = matrixVIS2( p_closest_lower:p_closest_upper,T_closest_lower:T_closest_upper )
+
+        call bilinear_interp(pmid(i),Tmid(i),p2,T2,matrixUV_22,band_opacity(4,i))
+        call bilinear_interp(pmid(i),Tmid(i),p2,T2,matrixVIS1_22,band_opacity(5,i))
+        call bilinear_interp(pmid(i),Tmid(i),p2,T2,matrixVIS2_22,band_opacity(6,i))
+
+        if ( (Tmid(i) .gt. maxval(TL)) .or. (Tmid(i) .lt. minval(TL))&
+        .or. (pmid(i) .gt. maxval(pL)) .or. (pmid(i) .lt. minval(pL)) ) then
+          band_opacity(4,i) = matrixUV(p_closest,T_closest)
+          band_opacity(5,i) = matrixVIS1(p_closest,T_closest)
+          band_opacity(6,i) = matrixVIS2(p_closest,T_closest)
+        end if
+
+        SG_tweak_sw = 0d0!1d5
+        !band_opacity(4,i) = SG_tweak_sw !6e-4
+        !band_opacity(5,i) = SG_tweak_sw !6e-4
+        !band_opacity(6,i) = SG_tweak_sw !6e-4
+
+        !band_opacity(4,i) = band_opacity(4,i)*1e-5
+        !band_opacity(5,i) = band_opacity(5,i)*1e-5
+        !band_opacity(6,i) = band_opacity(6,i)*1e-5
+
+      end if
+
+      !print*, "i, band_opacity(:,i) = ", i, &
+      !         band_opacity(1,i), band_opacity(2,i), band_opacity(3,i), band_opacity(4,i), band_opacity(5,i), band_opacity(6,i)
+    end do
+
+    if (cloud_toggle .eqv. .true.) then
+      ! Adding cloud opacity. Array of zeros, and k_cloud between cloud_bottom and cloud_top
+      cloud_opacity = 0.0_dp
+
+      ! index of the closest element to cloud_bottom and cloud_top [Pa] in pmid
+      cloud_base_i = minloc(abs(cloud_base*(pmid/pmid)-pmid), DIM=1)
+      cloud_top_i  = minloc(abs(cloud_top*(pmid/pmid)-pmid), DIM=1)
+
+      do b_index = 1, n_bands
+        do i = cloud_top_i, cloud_base_i
+          ! The cloud is grey
+          call optical_properties(q_c(i), N_c, sigma, Tmid(i), aa(i), gg(i), kk(i))
+          cloud_opacity(b_index,i) = kk(i)!k_cloud(b_index)
+          !print*, "kk(i) = ", kk(i)
+          !print*, "aa(i), gg(i), aa(i), gg(i) = ", aa(i), gg(i), aa(i), gg(i)
+          sw_a(i) = aa(i) !sw_ac
+          sw_g(i) = gg(i) !sw_gc
+          lw_a(i) = aa(i) !lw_ac
+          lw_g(i) = gg(i) !lw_gc
+        end do
+      end do
+
+      ! Add the cloud opacity between the cloud top and cloud base, checking for saturation
+      do i = cloud_top_i, cloud_base_i
+        if (Tmid(cloud_base_i) < dew_point(cloud_base_i)) then
+          !print*, "--- Cloud formation allowed. Adding cloud opacity to layer", i
+          do b_index = 1, n_bands
+            !print*, "i, band_opacity(b_index,i), cloud_opacity(b_index,i) = ", i, band_opacity(b_index,i), cloud_opacity(b_index,i)
+            !if (isnan(band_opacity(b_index,i))) stop '"band_opacity(b_index,i)" is a NaN'
+            band_opacity(b_index,i) = band_opacity(b_index,i) + cloud_opacity(b_index,i)
+            !if (isnan(band_opacity(b_index,i))) stop '"band_opacity(b_index,i)" is a NaN'
+          end do
+        else
+          !print*, "--- Layer subsaturated. No cloud can form here. --- "
+        end if
+      end do
+
+    end if
+
+    !print*, "band_opacity(1,:) = ", band_opacity(1,:)
+
+  end subroutine k_Ross_Boukrouche
 
   !! Calculates 3 band grey visual gamma values and 2 picket fence IR gamma values
   !! according to the coefficents and equations in:

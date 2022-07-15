@@ -20,12 +20,20 @@ program Exo_FMS_RC
   !use ts_Heng_ITS_mod, only: ts_Heng_ITS
   use ts_short_char_mod_linear, only : ts_short_char_linear
   use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
+  use ts_short_char_mod_Bezier_bg, only : ts_short_char_Bezier_bg
   use ts_Mendonca_mod, only : ts_Mendonca
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
-  use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
+  use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia, k_Ross_Boukrouche
   use IC_mod, only : IC_profile
   use dry_conv_adj_mod, only : Ray_dry_adj
+  use moist_adj_mod,            only : moist_adj, Tdew, Rcp
+  use read_opacity_tables_mod
+  use tau_struc_mod,            only : tau_struct
+  use linspace_module,          only : linspace, arange
+  use spectral_partitioner_mod, only : spectral_partition
+  use read_planck_mod,          only : read_planck, Planck_table
+  use cloud_mod,                only : read_optical_properties
   use ieee_arithmetic
   implicit none
 
@@ -43,7 +51,9 @@ program Exo_FMS_RC
   real(dp), allocatable, dimension(:) :: Tl, pl, pe, dpe
   real(dp), allocatable, dimension(:) :: k_Vl, k_IRl
   real(dp), allocatable, dimension(:) :: tau_Ve, tau_IRe, tau_IRl
-  real(dp), allocatable, dimension(:) :: dT_rad, dT_conv, net_F
+  real(dp), allocatable, dimension(:) :: dT_rad, dT_conv, dT_conv_moist, net_F
+  real(dp), allocatable, dimension(:) :: dT_rad_IR, dT_rad_W1, dT_rad_W2, dT_rad_UV, dT_rad_VIS1, dT_rad_VIS2,&
+                                         dT_rad_planetary, dT_rad_stellar
 
   real(dp), allocatable, dimension(:) :: sw_a, sw_g, lw_a, lw_g
 
@@ -76,10 +86,25 @@ program Exo_FMS_RC
 
   integer :: u_nml
 
+  real(dp), allocatable, dimension(:) :: dew_point
+  real(dp), allocatable, dimension(:,:) :: tau_bg, net_F_bg, thermal_net, thermal_up, thermal_down, stellar_up, stellar_down
+  real(dp), allocatable, dimension(:,:) :: cff
+  real(dp), allocatable, dimension(:) :: scff, opr, asr_b
+  ! Local variables
+  integer :: b_index
+  real(dp), allocatable, dimension(:,:) :: wn_edges, kRoss
+  real(dp), allocatable, dimension(:) :: x_gas, x_cond, net_Fs_bg, f_star, I_star, tau_bg_band, TsL
+  ! Namelist variables
+  integer :: n_bands, nb_Ts
+  logical :: cloud_toggle
+  real(dp) :: cloud_base, cloud_top, N_c, sigma
+  character(len=32) :: star
+
   namelist /FMS_RC_nml/ ts_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
           & t_step, nstep, Rd_air, cp_air, grav, mu_z, Tirr, Tint, k_V, k_IR, AB, fl, met, &
           & iIC, corr, sw_ac, sw_gc, lw_ac, lw_gc, sw_a_surf, Bezier, surf, Ts_init, cp_surf, &
-          & Tstrat_init, lw_a_surf, ns, nl, zcorr, zcorr_meth, radius
+          & Tstrat_init, lw_a_surf, ns, nl, zcorr, zcorr_meth, radius, n_bands, cloud_toggle, &
+          & cloud_base, cloud_top, N_c, sigma, star, nb_Ts
 
   !! Read input variables from namelist
   open(newunit=u_nml, file='FMS_RC.nml', status='old', action='read')
@@ -115,9 +140,23 @@ program Exo_FMS_RC
   end do
 
   !! Allocate other arrays we need
-  allocate(Tl(nlay), dT_rad(nlay), dT_conv(nlay), net_F(nlev))
-  allocate(tau_Ve(nlev),tau_IRe(nlev), k_Vl(nlay), k_IRl(nlay))
+  allocate(Tl(nlay), dT_rad(nlay), dT_conv(nlay), dT_conv_moist(nlay), net_F(nlev), dew_point(nlay))
+  allocate(dT_rad_IR(nlay),dT_rad_W1(nlay),dT_rad_W2(nlay),dT_rad_UV(nlay),dT_rad_VIS1(nlay),dT_rad_VIS2(nlay),&
+           dT_rad_planetary(nlay),dT_rad_stellar(nlay))
+  allocate(tau_Ve(nlev),tau_IRe(nlev), k_Vl(nlay), k_IRl(nlay), TsL(nb_Ts))
   allocate(alt(nlev), mu_z_eff(nlev), alp(nlev))
+
+  if (opac_scheme == 'Boukrouche') then
+    allocate(wn_edges(n_bands,2),kRoss(n_bands,nlay),tau_bg_band(nlev))
+  end if
+  allocate(tau_bg(n_bands,nlev),thermal_up(n_bands,nlev))
+
+  !if ((ts_scheme == 'Shortchar_Bezier_bg') .or. (ts_scheme == 'Disort_scatter_bg')) then
+  !  ! Added by RB
+    allocate(x_gas(nlay), x_cond(nlay), net_F_bg(n_bands,nlev), thermal_net(n_bands,nlev), thermal_down(n_bands,nlev), &
+             stellar_up(n_bands,nlev), stellar_down(n_bands,nlev), cff(n_bands,nlay), scff(n_bands), net_Fs_bg(n_bands), &
+             opr(n_bands), asr_b(n_bands), f_star(n_bands), I_star(n_bands),Planck_table(n_bands+1,2999))
+  !end if
 
   if (ts_scheme == 'Heng') then
     allocate(tau_IRl(nlay))
@@ -159,9 +198,48 @@ program Exo_FMS_RC
     fl = 1.0_dp
   end select
 
+  if (ts_scheme == 'Shortchar_Bezier_bg' .or. ts_scheme == 'Disort_scatter_bg') then
+    call read_planck(n_bands)
+  end if
+
+  if (opac_scheme == 'Boukrouche') then
+    call read_opacity_tables(n_bands)
+
+    ! Set wavenumber edges of each band [cm-1]
+    if (n_bands .eq. 4) then
+      wn_edges(1,1) = 12500.0_dp; wn_edges(1,2) = 1.0_dp     ! Region IR + W1 + W2 (requires subtracting B(W1)+B(W2) from B(IR))
+      wn_edges(2,1) = 2900.0_dp;  wn_edges(2,2) = 2200.0_dp  ! Region W1
+      wn_edges(3,1) = 1300.0_dp;  wn_edges(3,2) = 500.0_dp   ! Region W2
+      wn_edges(4,1) = 40500.0_dp; wn_edges(4,2) = 12500.0_dp ! Region SW
+
+    else if (n_bands .eq. 5) then
+      wn_edges(1,1) = 12500.0_dp; wn_edges(1,2) = 1.0_dp     ! Region IR + W1 + W2
+      wn_edges(2,1) = 2900.0_dp;  wn_edges(2,2) = 2200.0_dp  ! Region W1
+      wn_edges(3,1) = 1300.0_dp;  wn_edges(3,2) = 500.0_dp   ! Region W2
+      wn_edges(4,1) = 40500.0_dp; wn_edges(4,2) = 25000.0_dp ! Region UV
+      wn_edges(5,1) = 25000.0_dp; wn_edges(5,2) = 12500.0_dp ! Region VIS
+
+    else if (n_bands .eq. 6) then
+      wn_edges(1,1) = 12500.0_dp; wn_edges(1,2) = 1.0_dp     ! Region IR + W1 + W2
+      wn_edges(2,1) = 2900.0_dp;  wn_edges(2,2) = 2200.0_dp  ! Region W1
+      wn_edges(3,1) = 1300.0_dp;  wn_edges(3,2) = 500.0_dp   ! Region W2
+      wn_edges(4,1) = 40500.0_dp; wn_edges(4,2) = 25000.0_dp ! Region UV
+      wn_edges(5,1) = 25000.0_dp; wn_edges(5,2) = 18750.0_dp ! Region VIS1
+      wn_edges(6,1) = 18750.0_dp; wn_edges(6,2) = 12500.0_dp ! Region VIS2
+
+    end if
+
+    if (cloud_toggle .eqv. .true.) then
+      call read_optical_properties()
+    end if
+
+  end if
+
   !! Initial condition T-p profile - see the routine for options
   call IC_profile(iIC,corr,nlay,pref,pl,k_Vl,k_IRl,Tint,mu_z,Tirr,grav,fl,Tl,prc, &
   & Ts_init, Tstrat_init, kappa_air)
+  !print*, "pl = ", pl
+  !print*, "Tl = ", Tl
 
   !! Print initial T-p profile
   do i = 1, nlay
@@ -169,7 +247,11 @@ program Exo_FMS_RC
   end do
   print*, '--------------'
 
-  Ts = Ts_init
+  if (nb_Ts .gt. 1) then
+    TsL = arange(200.0_dp, 3001.0_dp, 50.0_dp)
+  else
+    Ts = Ts_init
+  end if
 
   !! Write out initial conditions
   open(newunit=u,file='FMS_RC_ic.out',action='readwrite')
@@ -184,14 +266,22 @@ program Exo_FMS_RC
   t_tot = 0.0_dp
   inan = 0
 
+  do i = 1, nlay
+    dew_point(i) = Tdew(pl(i))
+  end do
+
   !! cpu timer start
   call cpu_time(start)
 
-  do n = 1, nstep
+  loop_steps: do n = 1, nstep
 
+    print*, "Starting n = ", n
+    !print*, "pl = ", pl
+    !print*, "Tl = ", Tl
     net_F(:) = 0.0_dp
     dT_conv(:) = 0.0_dp
-
+    dT_conv_moist(:) = 0.0_dp
+    
     select case(opac_scheme)
     case('Constant')
       tau_Ve(:) = tau_Vref * pe(:)/pref
@@ -223,6 +313,27 @@ program Exo_FMS_RC
       do k = 1, nlay
         call k_Ross_Valencia(Tl(k), pl(k), met, k_IRl(k))
         tau_IRe(k+1) = tau_IRe(k) + (k_IRl(k) * dpe(k)) / grav
+      end do
+    case('Boukrouche')
+      ! Initialize the optical properties arrays to 0
+      sw_a = 0.0 ; sw_g = 0.0 ; lw_a = 0.0 ; lw_g = 0.0
+      ! Calculate optical depth structure using k_gas+k_cloud and the hydrostatic equilibrium assumption. Define single-scattering
+      ! albedos and anisotropic factors only in the cloud deck.
+      call k_Ross_Boukrouche(nlay,Tl,pl,n_bands,dew_point,cloud_toggle,cloud_base,cloud_top,sw_ac,sw_gc,lw_ac,lw_gc,kRoss,&
+                             x_cond,N_c,sigma,sw_a,sw_g,lw_a,lw_g)
+      do b_index = 1, n_bands
+        do i = 1, nlay
+          if (isnan(kRoss(b_index,i))) stop '"kRoss(b_index,i)" is a NaN'
+        end do
+        call tau_struct(nlay,grav,pe,kRoss(b_index,:),tau_bg_band)
+        tau_bg(b_index,:) = tau_bg_band
+        ! No zero optical depths because of log10(tau)
+        do k = 1, nlev
+          if (tau_bg(b_index,k) .eq. 0.0_dp) then
+            tau_bg(b_index,k) = 1d-6
+          end if 
+        end do
+        !-----
       end do
     case default
       print*, 'Invalid opac_scheme: ', trim(opac_scheme)
@@ -287,6 +398,26 @@ program Exo_FMS_RC
       ! Short characteristics method without LW scattering
       call ts_short_char_Bezier(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
       & mu_z_eff, F0, Tint, AB, sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
+    case('Shortchar_Bezier_bg')
+
+      call spectral_partition(n_bands,star,f_star,I_star)
+
+      ! Short characteristics method without LW scattering
+      call ts_short_char_Bezier_bg(Bezier, surf, Planck_table, n_bands, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, tau_bg, &
+                                 & mu_z_eff, F0, Tint, AB, sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, thermal_up, thermal_down,&
+                                 & stellar_up, stellar_down, opr, asr_b, net_Fs_bg, cff, scff, f_star)
+
+      do i = 1, nlev
+        net_F(i)  = sum(net_F_bg(:,i))
+      end do
+      !print*, "thermal_up = ", thermal_up
+      !print*, "thermal_down = ", thermal_down
+      !print*, "net_F_bg = ", net_F_bg
+      !print*, "Tl = ", Tl
+      olr    = sum(opr)
+      asr    = sum(asr_b)
+      net_Fs = sum(net_Fs_bg)
+      !print*, "olr, asr, net_Fs = ", olr, asr, net_Fs
     case('Heng')
       ! Heng flux method without LW scattering
       tau_IRl(:) = fl*tau_IRref*(pl(:)/pref)  + (1.0_dp - fl)*tau_IRref*(pl(:)/pref)**2  ! Optical depth at layer midpoints
@@ -317,6 +448,19 @@ program Exo_FMS_RC
     !! Calculate the temperature tendency due to radiation
     do i = 1, nlay
       dT_rad(i) = (grav/cp_air) * (net_F(i+1)-net_F(i))/(dpe(i))
+      dT_rad_IR(i) =&
+                (grav/cp_air) * ( (thermal_up(1,i+1) - thermal_down(1,i+1)) - (thermal_up(1,i) - thermal_down(1,i)) )/(dpe(i))
+      dT_rad_W1(i) =&
+                (grav/cp_air) * ( (thermal_up(2,i+1) - thermal_down(2,i+1)) - (thermal_up(2,i) - thermal_down(2,i)) )/(dpe(i))
+      dT_rad_W2(i) =&
+                (grav/cp_air) * ( (thermal_up(3,i+1) - thermal_down(3,i+1)) - (thermal_up(3,i) - thermal_down(3,i)) )/(dpe(i))
+      dT_rad_UV(i) =&
+                (grav/cp_air) * ( (thermal_up(4,i+1) - thermal_down(4,i+1)) - (thermal_up(4,i) - thermal_down(4,i)) )/(dpe(i))
+      dT_rad_VIS1(i) =&
+                (grav/cp_air) * ( (thermal_up(5,i+1) - thermal_down(5,i+1)) - (thermal_up(5,i) - thermal_down(5,i)) )/(dpe(i))
+      dT_rad_VIS2(i) =&
+                (grav/cp_air) * ( (thermal_up(6,i+1) - thermal_down(6,i+1)) - (thermal_up(6,i) - thermal_down(6,i)) )/(dpe(i))
+      dT_rad_stellar(i) = (grav/cp_air) * ( (- sum(stellar_down(:,i+1))) - (- sum(stellar_down(:,i))) )/(dpe(i))
       !print*, n, i, dT_rad(i)
     end do
 
@@ -357,7 +501,7 @@ program Exo_FMS_RC
         end do
         print*, nlev, net_F(nlev), olr, net_Fs, Ts
         inan = 1
-        exit
+        exit loop_steps
       end if
     end do
     if (inan == 1) then
@@ -366,9 +510,11 @@ program Exo_FMS_RC
 
     !! Increase the total time simulated
     t_tot = t_tot + t_step
+    print*, "Ending n = ", n
 
-  end do
+  end do loop_steps
 
+  print*, "After loop n = ", n
   !! cpu timer end
   call cpu_time(finish)
 
@@ -395,7 +541,18 @@ program Exo_FMS_RC
   end do
   close(u)
 
+  print*, "End n = ", n
   print*, n, 'steps took: '
+
+  !if (allocated(a,b,pe,pl,dpe,Tl,dT_rad,dT_conv,dT_conv_moist,net_F,dew_point,dT_rad_IR,dT_rad_W1,dT_rad_W2,dT_rad_UV,dT_rad_VIS1,&
+  !           dT_rad_VIS2,dT_rad_planetary,dT_rad_stellar,tau_Ve,tau_IRe,k_Vl,k_IRl,TsL,alt,mu_z_eff,alp,wn_edges,kRoss,&
+  !           tau_bg_band,tau_bg,thermal_up,x_gas,x_cond,net_F_bg,thermal_net,thermal_down,stellar_up,stellar_down,cff,scff,&
+  !           net_Fs_bg,opr,asr_b,f_star,I_star,Planck_table,tau_IRl,sw_a,sw_g,lw_a,lw_g))& 
+  !    deallocate(a,b,pe,pl,dpe,Tl,dT_rad,dT_conv,dT_conv_moist,net_F,dew_point,dT_rad_IR,dT_rad_W1,dT_rad_W2,dT_rad_UV,dT_rad_VIS1,&
+  !           dT_rad_VIS2,dT_rad_planetary,dT_rad_stellar,tau_Ve,tau_IRe,k_Vl,k_IRl,TsL,alt,mu_z_eff,alp,wn_edges,kRoss,&
+  !           tau_bg_band,tau_bg,thermal_up,x_gas,x_cond,net_F_bg,thermal_net,thermal_down,stellar_up,stellar_down,cff,scff,&
+  !           net_Fs_bg,opr,asr_b,f_star,I_star,Planck_table,tau_IRl,sw_a,sw_g,lw_a,lw_g)
+
   print '("Time = ",f8.3," seconds.")', finish-start
 
 

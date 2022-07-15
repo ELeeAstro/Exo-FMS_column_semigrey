@@ -33,9 +33,18 @@ LFLAGS    = $(FFLAGS)
 
 OBJECTS = \
 	  toms715.o \
+	  linspace.o \
+	  interp_mod.o \
+          phys.o \
+          read_opacity_tables.o \
+          read_planck.o \
+          cloud_mod.o \
+	  partitioner.o \
+	  tau_struc.o \
 	  k_Rosseland_mod.o \
 	  IC_mod.o \
 	  dry_conv_adj_mod.o \
+	  moist_adjustment.o \
 	  call_twostr.o \
 	  ts_isothermal_mod.o \
 	  ts_isothermal_2_mod.o \
@@ -44,6 +53,7 @@ OBJECTS = \
 	  ts_Heng_mod.o \
 	  ts_short_char_mod_linear.o \
 		ts_short_char_mod_Bezier.o \
+		ts_short_char_mod_Bezier_bg.o \
     ts_Mendonca_mod.o \
     ts_Lewis_scatter_mod.o \
 	  ts_disort_scatter_mod.o \

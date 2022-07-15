@@ -23,9 +23,12 @@
 !     |* Meaning of each variables is referred to documentation of
 !     |* the TWOSTR code, available online:
 !     |* ftp://climate1.gsfc.nasa.gov/wiscombe/Multiple_Scatt/TWOSTR/
-
-      SUBROUTINE CALL_TWOSTR(nlyr,temper,gg,ssalb,dtauc,ntau,utau,
-     $     planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,fnetup,olr)
+!
+!      SUBROUTINE CALL_TWOSTR(nlyr,temper,gg,ssalb,dtauc,ntau,utau,
+!     $     planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,fnetup,olr)
+      SUBROUTINE CALL_TWOSTR(nlyr,pe,temper,gg,ssalb,dtauc,ntau,utau,
+     $ planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,fnetup,flup,
+     $ rfldn,rfldir,cff,scff,olr)
 
       IMPLICIT NONE
       INTEGER maxcly
@@ -39,9 +42,11 @@
       REAL*8 temper(0:maxcly),utau(maxulv)
       REAL*8 gg(maxcly),ssalb(maxcly),dtauc(maxcly)
       REAL*8 fbeam,umu0,Tint,wvnmlo,wvnmhi
+      REAL*8 pe(1:ntau), Te_0(0:maxcly)
 !     ------------------ OUTPUT VARIABLES ----------------
       REAL*8 fnetup(maxulv), olr
-
+      REAL*8 flup(maxulv), rfldn(maxulv), rfldir(maxulv), cff(1:nlyr), 
+     $     scff
 !     ------------------ LOCAL VARIABLES -----------------
       LOGICAL :: quiet = .true.
       LOGICAL :: spher = .false.
@@ -53,8 +58,7 @@
       REAL*8 :: temis = 0.0
       REAL*8 :: ttemp = 0.0
       REAL*8 btemp,radius
-      REAL*8 dfdt(maxulv), flup(maxulv), rfldir(maxulv),
-     $     rfldn(maxulv), uavg(maxulv),zd(0:maxcly)
+      REAL*8 dfdt(maxulv), uavg(maxulv),zd(0:maxcly)
       REAL*8 taucum
       INTEGER ierror(nerr),i,j,k,ierr
       CHARACTER header*127
@@ -79,7 +83,8 @@
      $     gg, header, ierror, maxcly, maxulv, nlyr, planck,
      $     ntau, prnt, quiet, radius, spher, ssalb, temis,
      $     temper, ttemp, umu0,  usrtau, utau, wvnmlo,
-     $     wvnmhi, zd, dfdt, flup, rfldir, rfldn, uavg )
+     $     wvnmhi, zd, dfdt, flup, rfldir, rfldn, uavg,
+     $     pe, cff, scff )
       do i = 1,ntau
          fnetup(i) = flup(i) - rfldir(i) - rfldn(i)
       enddo
@@ -108,7 +113,8 @@ C     =============================================================
      $     gg, header, ierror, maxcly, maxulv, nlyr, planck,
      $     ntau, prnt, quiet, radius, spher, ssalb, temis,
      $     temper, ttemp, umu0,  usrtau, utau, wvnmlo,
-     $     wvnmhi, zd, dfdt, flup, rfldir, rfldn, uavg )
+     $     wvnmhi, zd, dfdt, flup, rfldir, rfldn, uavg,
+     $     pe, cff, scff )
 c***********************************************************************
 c Copyright (C) 1993, 1994, 1995 Arve Kylling
 c
@@ -150,7 +156,8 @@ c
       INTEGER ierror(22), maxcly, maxulv, nlyr, ntau
       REAL*8    albedo, btemp, dtauc( maxcly ), fbeam, fisot,gg(maxcly),
      $        radius, ssalb( maxcly ), temper( 0:maxcly ), temis, ttemp,
-     $        wvnmlo, wvnmhi, umu0, utau( maxulv ), zd( 0:maxcly )
+     $        wvnmlo, wvnmhi, umu0, utau( maxulv ), zd( 0:maxcly ),
+     $        pe( 1:ntau ), cff( 1:nlyr ), scff
 c
       REAL*8    rfldir( maxulv ), rfldn( maxulv ), flup( maxulv ),
      $        uavg( maxulv ), dfdt( maxulv )
@@ -415,11 +422,59 @@ c
      $     yb_0d, yb_0u, yb_1d, yb_1u, yp_0d, yp_0u, yp_1d, yp_1u,
      $     zb_a, zp_a )
 c
+c Compute flux contribution function to the outgoing radiation
+c
+      CALL cffs( nlyr, ntau, bplank, pkag, pe, utau, cff, scff )
+c
       RETURN
 c
 1010  FORMAT ( ////, 1X, 120('*'), /, 25X,
      $  'Two stream method radiative transfer program, version 1.13',
      $  /, 1X, A, /, 1X, 120('*') )
+c
+      END
+c
+      SUBROUTINE cffs( nlyr, ntau, bplank, pkag, pe, utau, cff, scff )
+c
+c Calculates the flux contribution function to the planetary outgoing radiation
+c
+c I n p u t       v a r i a b l e s:
+c
+c      nlyr      : Number of user layer centers
+c      ntau      : Number of user layer boundaries
+c      bplank    : Intensity emitted from bottom boundary
+c      pkag      : Integrated Planck function for internal emission at layer boundaries
+c      pe        : Pressure array on layer boundaries
+c      utau      : Optical depth array on layer boundaries
+c
+c O u t p u t      v a r i a b l e s:
+c
+c      cff       : Flux contribution function
+c      scff      : Surface flux contribution function
+c
+c I n t e r n a l     v a r i a b l e s:
+c
+c      D_factor  : Diffusivity factor
+c      bint      : pkag with indices shifted from 0:mxcly to 1:mxulv
+c
+      implicit none
+      integer k, nlyr, ntau
+      real*8 D_factor, pi, bplank, pkag(0:*), bint(1:ntau),
+     $ pe(1:ntau), utau(1:ntau) 
+      real*8 cff(1:nlyr), scff
+c     
+      pi = 2. * ASIN(1.d0)
+      D_factor = 1.66D+00 ! constant diffusivity factor
+      bint(1:ntau) = pkag(0:nlyr)
+      do k = 1, nlyr
+        !D_factor = 1.5_dp + 0.5_dp/(1_dp + 4_dp*(tau_struc_edges(k)+tau_struc_edges(k+1))/2_dp &
+        !         + 10_dp*((tau_struc_edges(k)+tau_struc_edges(k+1))/2_dp)**2) ! diffusivity approximation (Thomas & Stammes 1999, section 11.2.5)
+        cff(k) = ( 2.0D+00*pi*bint(k)/D_factor ) 
+     $  * abs( exp(-D_factor*utau(k+1)) - exp(-D_factor*utau(k)) ) 
+     $  / abs( log10(pe(k+1))-log10(pe(k)) )
+      end do  
+      !scff = 2_dp*pi*flux_up(nlay1)*exp(-D_factor*tau_struc_edges(nlay1))/D_factor
+      scff = bplank*exp(-D_factor*utau(size(utau)))
 c
       END
 c
