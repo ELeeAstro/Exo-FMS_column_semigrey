@@ -24,6 +24,7 @@ program Exo_FMS_RC
   use ts_Mendonca_mod, only : ts_Mendonca
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
+  use ts_disort_scatter_bg_mod, only : ts_disort_scatter_bg
   use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia, k_Ross_Boukrouche
   use IC_mod, only : IC_profile
   use dry_conv_adj_mod, only : Ray_dry_adj
@@ -436,6 +437,20 @@ program Exo_FMS_RC
       ! Two-stream DISORT version ()with SW/LW scattering)
       call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
+    case('Disort_scatter_bg')
+        ! Band-grey two-stream DISORT version
+        call spectral_partition(n_bands,star,f_star,I_star)
+
+        call ts_disort_scatter_bg(surf, Bezier, f_star, n_bands, wn_edges, nlay, nlev, Ts, Tl, &
+             & pl, pe, tau_Ve, tau_IRe, tau_bg, mu_z, F0, Tint, AB, sw_a, sw_g, lw_a, &
+             & lw_g, net_F_bg, diffuse_up, diffuse_down, direct_beam, cff, scff, opr, asr_b)
+
+        do i = 1, nlev
+          net_F(i)  = sum(net_F_bg(:,i))
+        end do
+        olr    = sum(opr)
+        asr    = sum(asr_b)
+        net_Fs = sum(net_Fs_bg)
     case('Mendonca')
       ! Mendonca method without LW scattering
       call ts_Mendonca(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &

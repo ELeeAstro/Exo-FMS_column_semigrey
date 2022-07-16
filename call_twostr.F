@@ -472,6 +472,9 @@ c
         cff(k) = ( 2.0D+00*pi*bint(k)/D_factor ) 
      $  * abs( exp(-D_factor*utau(k+1)) - exp(-D_factor*utau(k)) ) 
      $  / abs( log10(pe(k+1))-log10(pe(k)) )
+        if (isnan(cff(k))) then
+          cff(k) = 0.0d0
+        end if
       end do  
       !scff = 2_dp*pi*flux_up(nlay1)*exp(-D_factor*tau_struc_edges(nlay1))/D_factor
       scff = bplank*exp(-D_factor*utau(size(utau)))
