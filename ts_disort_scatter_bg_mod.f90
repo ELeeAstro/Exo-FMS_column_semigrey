@@ -21,7 +21,7 @@ contains
 
   subroutine ts_disort_scatter_bg(surf, Bezier, f_star, n_bands, wn_edges, nlay, nlev, Ts, Tl, &
              & pl, pe, tau_Ve, tau_IRe, tau_bg, mu_z, F0, Tint, AB, sw_a, sw_g, lw_a, &
-             & lw_g, F_net, diffuse_up, diffuse_down, direct_beam, cff, scff, opr, asr)
+             & lw_g, F_net, thermal_up, thermal_down, stellar_down, cff, scff, opr, asr)
     implicit none
 
     !! Additional input variables for band-grey
@@ -41,7 +41,7 @@ contains
 
     !! Output variables
     real(dp), dimension(n_bands), intent(out) :: opr, asr
-    real(dp), dimension(n_bands,nlev), intent(out) :: F_net, diffuse_up, diffuse_down, direct_beam
+    real(dp), dimension(n_bands,nlev), intent(out) :: F_net, thermal_up, thermal_down, stellar_down
     real(dp), dimension(n_bands,nlay), intent(out) :: cff
     real(dp), dimension(n_bands), intent(out) :: scff
 
@@ -61,9 +61,9 @@ contains
     real(dp) :: wvnmlo, wvnmhi
     real(dp), dimension(maxcly) :: dtauc, utau
     real(dp), dimension(maxcly) :: gg, ssalb
-    real(dp), dimension(n_bands,maxulv) :: lw_net_maxsize, sw_net_maxsize, diffuse_lw_up_maxsize,&
-                                           diffuse_sw_up_maxsize, diffuse_lw_down_maxsize, diffuse_sw_down_maxsize,&
-                                           direct_beam_lw_maxsize, direct_beam_sw_maxsize 
+    real(dp), dimension(n_bands,maxulv) :: lw_net_maxsize, sw_net_maxsize, thermal_lw_up_maxsize,&
+                                           thermal_sw_up_maxsize, thermal_lw_down_maxsize, thermal_sw_down_maxsize,&
+                                           stellar_down_lw_maxsize, stellar_down_sw_maxsize 
 
     !! Additional variables for band-grey
     integer :: b
@@ -99,7 +99,7 @@ contains
 
       if (mu_z > 0.0_dp) then
         planck = .False.
-        gg(1:nlay) = sw_g(:) ! gg, ssalb, dtauc, utau are size 200, net_F is size 201, diffuse_up(b,:) is size 55.
+        gg(1:nlay) = sw_g(:) ! gg, ssalb, dtauc, utau are size 200, net_F is size 201, thermal_up(b,:) is size 55.
         ssalb(1:nlay) = sw_a(:)
         fbeam = (1.0_dp-AB) * F0
         umu0 = mu_z
@@ -110,13 +110,13 @@ contains
           dtauc(i) = (tau_Ve(i+1) - tau_Ve(i))
         end do
         call CALL_TWOSTR (nlay,pe,Te_0,gg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,&
-                          sw_net_maxsize(1,:),diffuse_sw_up_maxsize(1,:),diffuse_sw_down_maxsize(1,:),&
-                          direct_beam_sw_maxsize(1,:),cff_sw(1,:),scff_sw(1),opr_sw(1))
+                          sw_net_maxsize(1,:),thermal_sw_up_maxsize(1,:),thermal_sw_down_maxsize(1,:),&
+                          stellar_down_sw_maxsize(1,:),cff_sw(1,:),scff_sw(1),opr_sw(1))
         sw_net(1,:) = sw_net_maxsize(1,1:nlev)
-        direct_beam(1,:) = direct_beam_sw_maxsize(1,1:nlev)
+        stellar_down(1,:) = stellar_down_sw_maxsize(1,1:nlev)
       else
         sw_net(1,:) = 0.0_dp
-        direct_beam(1,:) = 0.0_dp
+        stellar_down(1,:) = 0.0_dp
       end if
 
       !! Longwave two-stream flux calculation
@@ -132,8 +132,8 @@ contains
         dtauc(i) = (tau_IRe(i+1) - tau_IRe(i))
       end do
       call CALL_TWOSTR (nlay,pe,Te_0,gg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,&
-                        lw_net_maxsize(1,:),diffuse_lw_up_maxsize(1,:),diffuse_lw_down_maxsize(1,:),&
-                        direct_beam_lw_maxsize(1,:),cff_lw(1,:),scff(1),opr(1))
+                        lw_net_maxsize(1,:),thermal_lw_up_maxsize(1,:),thermal_lw_down_maxsize(1,:),&
+                        stellar_down_lw_maxsize(1,:),cff_lw(1,:),scff(1),opr(1))
                 
       lw_net(1,:)  = lw_net_maxsize(1,1:nlev)
 
@@ -144,9 +144,9 @@ contains
       asr(1) = 0.0_dp
 
       !! Upward and downward fluxes
-      diffuse_up(1,:)   = diffuse_lw_up_maxsize(1,1:nlev)   + diffuse_sw_up_maxsize(1,1:nlev)
-      diffuse_down(1,:) = diffuse_lw_down_maxsize(1,1:nlev) + diffuse_sw_down_maxsize(1,1:nlev)
-      direct_beam(1,:)  = direct_beam_lw_maxsize(1,1:nlev)  + direct_beam_sw_maxsize(1,1:nlev)
+      thermal_up(1,:)   = thermal_lw_up_maxsize(1,1:nlev)   + thermal_sw_up_maxsize(1,1:nlev)
+      thermal_down(1,:) = thermal_lw_down_maxsize(1,1:nlev) + thermal_sw_down_maxsize(1,1:nlev)
+      stellar_down(1,:) = stellar_down_lw_maxsize(1,1:nlev) + stellar_down_sw_maxsize(1,1:nlev)
 
       !! CFF (already the right size)
       cff(1,:) = cff_lw(1,:) + cff_sw(1,:)
@@ -168,20 +168,20 @@ contains
           !print*, "pe = ", pe
           !print*, "tau_bg(b,:) = ", tau_bg(b,:)
           call CALL_TWOSTR (nlay,pe,Te_0,gg,ssalb,dtauc,nlev,utau,planck,wn_edges(b,2),wn_edges(b,1),Tint,&
-                            fbeam,umu0,sw_net_maxsize(b,:),diffuse_sw_up_maxsize(b,:),diffuse_sw_down_maxsize(b,:),&
-                            direct_beam_sw_maxsize(b,:),cff_sw(b,:),scff_sw(b),opr_sw(b))
+                            fbeam,umu0,sw_net_maxsize(b,:),thermal_sw_up_maxsize(b,:),thermal_sw_down_maxsize(b,:),&
+                            stellar_down_sw_maxsize(b,:),cff_sw(b,:),scff_sw(b),opr_sw(b))
 
           sw_net(b,:) = sw_net_maxsize(b,1:nlev)
-          direct_beam(b,:) = direct_beam_sw_maxsize(b,1:nlev)
+          stellar_down(b,:) = stellar_down_sw_maxsize(b,1:nlev)
 
         end do
         !Subtract window fluxes from the IR band
         sw_net(1,:) = sw_net(1,:) - sw_net(2,:) - sw_net(3,:)
-        direct_beam(1,:) = direct_beam(1,:) - direct_beam(2,:) - direct_beam(3,:)
+        stellar_down(1,:) = stellar_down(1,:) - stellar_down(2,:) - stellar_down(3,:)
 
       else 
         sw_net(:,:) = 0.0_dp
-        direct_beam(:,:) = 0.0_dp
+        stellar_down(:,:) = 0.0_dp
       end if
     
       ! Diffuse flux calculation
@@ -197,8 +197,8 @@ contains
           !print*, "dtauc(i), tau_bg(b,i+1), tau_bg(b,i) = ", dtauc(i), tau_bg(b,i+1), tau_bg(b,i)
         end do
         call CALL_TWOSTR (nlay,pe,Te_0,gg,ssalb,dtauc,nlev,utau,planck,wn_edges(b,2),wn_edges(b,1),Tint,&
-                          fbeam,umu0,lw_net_maxsize(b,:),diffuse_lw_up_maxsize(b,:),diffuse_lw_down_maxsize(b,:),&
-                          direct_beam_lw_maxsize(b,:),cff_lw(b,:),scff(b),opr(b))
+                          fbeam,umu0,lw_net_maxsize(b,:),thermal_lw_up_maxsize(b,:),thermal_lw_down_maxsize(b,:),&
+                          stellar_down_lw_maxsize(b,:),cff_lw(b,:),scff(b),opr(b))
                     
         !print*, "cff_lw(b,:) = ", cff_lw(b,:)
         !! Net fluxes at each level
@@ -211,12 +211,12 @@ contains
         asr(b) = 0.0_dp
 
         !! Upward and downward fluxes
-        diffuse_up(b,:)   = diffuse_lw_up_maxsize(b,1:nlev)   + diffuse_sw_up_maxsize(b,1:nlev)
-        diffuse_down(b,:) = diffuse_lw_down_maxsize(b,1:nlev) + diffuse_sw_down_maxsize(b,1:nlev)
-        direct_beam(b,:)  = direct_beam_lw_maxsize(b,1:nlev)  + direct_beam_sw_maxsize(b,1:nlev)
+        thermal_up(b,:)   = thermal_lw_up_maxsize(b,1:nlev)   + thermal_sw_up_maxsize(b,1:nlev)
+        thermal_down(b,:) = thermal_lw_down_maxsize(b,1:nlev) + thermal_sw_down_maxsize(b,1:nlev)
+        stellar_down(b,:) = stellar_down_lw_maxsize(b,1:nlev) + stellar_down_sw_maxsize(b,1:nlev)
 
-        print*, "Fup",b,"1), sub, wn_edges(",b,",2),wn_edges(",b,",1) = ", diffuse_up(b,1),&
-        diffuse_up(1,1)-diffuse_up(2,1)-diffuse_up(3,1), wn_edges(b,2),wn_edges(b,1)
+        print*, "Fup",b,"1), sub, wn_edges(",b,",2),wn_edges(",b,",1) = ", thermal_up(b,1),&
+        thermal_up(1,1)-thermal_up(2,1)-thermal_up(3,1), wn_edges(b,2),wn_edges(b,1)
 
         !! CFF (already the right size)
         cff(b,:) = cff_lw(b,:) + cff_sw(b,:)
@@ -241,10 +241,10 @@ contains
         if (isnan(fbeam)) stop '"fbeam" is a NaN'
         if (isnan(umu0)) stop '"umu0" is a NaN'
         do i = 1, nlay+1
-          if (isnan(F_net(b,i))) stop '"diffuse_net(b,i)" is a NaN'
-          if (isnan(diffuse_up(b,i))) stop '"diffuse_up(b,i)" is a NaN'
-          if (isnan(diffuse_down(b,i))) stop '"diffuse_up(b,i)" is a NaN'
-          if (isnan(direct_beam(b,i))) stop '"direct_beam(b,i)" is a NaN'
+          if (isnan(F_net(b,i))) stop '"thermal_net(b,i)" is a NaN'
+          if (isnan(thermal_up(b,i))) stop '"thermal_up(b,i)" is a NaN'
+          if (isnan(thermal_down(b,i))) stop '"thermal_up(b,i)" is a NaN'
+          if (isnan(stellar_down(b,i))) stop '"stellar_down(b,i)" is a NaN'
         end do
         do i = 1, nlay
           if (isnan(cff(b,i))) stop '"cff(b,i)" is a NaN'
@@ -258,10 +258,10 @@ contains
       !Subtract window fluxes from the IR band
       lw_net(1,:)       = lw_net(1,:)       - lw_net(2,:)       - lw_net(3,:)
       sw_net(1,:)       = sw_net(1,:)       - sw_net(2,:)       - sw_net(3,:)
-      !print*, "diffuse_up(1,1), diffuse_up(2,1), diffuse_up(3,1), sub = ", diffuse_up(1,1), diffuse_up(2,1), diffuse_up(3,1),&
-      diffuse_up(1,1)   - diffuse_up(2,1)   - diffuse_up(3,1)
-      diffuse_up(1,:)   = diffuse_up(1,:)   - diffuse_up(2,:)   - diffuse_up(3,:)
-      diffuse_down(1,:) = diffuse_down(1,:) - diffuse_down(2,:) - diffuse_down(3,:)
+      !print*, "thermal_up(1,1), diffuse_up(2,1), diffuse_up(3,1), sub = ", diffuse_up(1,1), diffuse_up(2,1), diffuse_up(3,1),&
+      !thermal_up(1,1)   - thermal_up(2,1)   - thermal_up(3,1)
+      thermal_up(1,:)   = thermal_up(1,:)   - thermal_up(2,:)   - thermal_up(3,:)
+      thermal_down(1,:) = thermal_down(1,:) - thermal_down(2,:) - thermal_down(3,:)
       cff(1,:)          = cff(1,:)          - cff(2,:)          - cff(3,:)
       scff(1)           = scff(1)           - scff(2)           - scff(3)
       opr(1)            = opr(1)            - opr(2)            - opr(3)

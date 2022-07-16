@@ -14,12 +14,12 @@ b_sh = 'Hybrid_sigma_grid_b_47.txt'
 pref = 10e5
 
 t_step = 60.0
-nstep = 100
+nstep = 1000
 Rd_air = 461.50
 cp_air = 1864.0
-grav = 10.807314000000002
+grav = 10.8
 mu_z = 0.1
-Tirr = 402.80 ! ((1.0 - 0.175) * 0.75*L_Sun / ( 4. * pi * (0.723*AU)**2. )
+Tirr = 561.89 !(1.0 - 0.0) * 0.000553*L_Sun / ( 4. * np.pi * (a_major*AU)**2. )
 Tint = 0.0
 
 Bezier = .True.
@@ -46,7 +46,7 @@ iIC = 6
 corr = .False.
 
 surf = .True.
-Ts_init = 300.0
+Ts_init = 500.0
 Tstrat_init = 50.0
 cp_surf = 1e5
 sw_a_surf = 0.0

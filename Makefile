@@ -57,6 +57,7 @@ OBJECTS = \
     ts_Mendonca_mod.o \
     ts_Lewis_scatter_mod.o \
 	  ts_disort_scatter_mod.o \
+	  ts_disort_scatter_bg_mod.o \
     FMS_RC.o
 
 #		ts_Heng_ITS_mod.o \

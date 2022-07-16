@@ -443,7 +443,7 @@ program Exo_FMS_RC
 
         call ts_disort_scatter_bg(surf, Bezier, f_star, n_bands, wn_edges, nlay, nlev, Ts, Tl, &
              & pl, pe, tau_Ve, tau_IRe, tau_bg, mu_z, F0, Tint, AB, sw_a, sw_g, lw_a, &
-             & lw_g, net_F_bg, diffuse_up, diffuse_down, direct_beam, cff, scff, opr, asr_b)
+             & lw_g, net_F_bg, thermal_up, thermal_down, stellar_down, cff, scff, opr, asr_b)
 
         do i = 1, nlev
           net_F(i)  = sum(net_F_bg(:,i))
