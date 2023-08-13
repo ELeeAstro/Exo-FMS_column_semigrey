@@ -20,8 +20,8 @@ program Exo_FMS_RC
   !use ts_Heng_ITS_mod, only: ts_Heng_ITS
   use ts_short_char_mod_linear, only : ts_short_char_linear
   use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
-  use ts_LLF_AA_mod, only : ts_LLF_AA
-  use ts_LLF_PM_mod, only : ts_LLF_PM
+  use ts_AA_E_mod, only : ts_AA_E
+  use ts_AA_L_mod, only : ts_AA_L
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
   use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
@@ -305,14 +305,14 @@ program Exo_FMS_RC
       ! Two-stream DISORT version (with SW/LW scattering)
       call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
-    case('LLF_AA')
-      ! LLF AA method with analytical LW scattering
-      call ts_LLF_AA(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
-    case('LLF_PM')
-      ! LLF PM method with analytical LW scattering
-      call ts_LLF_PM(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)      
+    case('AA_E')
+      ! Absorption Approximation (exoponential Planck function) with analytical LW scattering
+      call ts_AA_E(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)   
+    case('AA_L')
+      ! Absorption Approximation (linear Planck function) with analytical LW scattering
+      call ts_AA_L(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)           
     case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)

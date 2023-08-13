@@ -1,13 +1,13 @@
 !!!
 ! Elspeth KH Lee - Aug 2023 : Initial version
 ! sw: Adding layer method with scattering
-! lw: n-stream Absorption Approximation (nAA) method following the Liou, Li and Fu papers (Li & Fu 2000, Fu et al. 1997, Li 2000) and similar
+! lw: Perturbation Method (PM) method following the Liou, Li and Fu papers (Li & Fu 2000, Fu et al. 1997, Li 2000) and similar
 ! we use the linear in tau approach due to high temperature gradients and optical depths for exoplanets
-!     Pros: Very fast method with a LW scattering approximation, no matrix inversions
-!     Cons: Not technically multiple scattering (can be quite innacurate at high albedo), cannot use phase function
+!     Pros: Very fast method with (much better than AA) LW scattering approximation, no matrix inversions
+!     Cons: Not technically multiple scattering (can be quite innacurate at high albedo and g)
 !!!
 
-module ts_LLF_AA_mod
+module ts_AA_L_mod
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -21,7 +21,7 @@ module ts_LLF_AA_mod
 
   !! Legendre quadrature for 1 nodes
   ! integer, parameter :: nmu = 1
-  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.66_dp/)
+  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/)
   ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
   ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
@@ -32,12 +32,12 @@ module ts_LLF_AA_mod
   real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
 
-  public :: ts_LLF_AA
+  public :: ts_AA_L
   private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_LLF_AA(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+  subroutine ts_AA_L(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
     & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     implicit none
 
@@ -114,7 +114,7 @@ contains
     !! Output asr
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine ts_LLF_AA
+  end subroutine ts_AA_L
 
   subroutine lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_a_surf, lw_up, lw_down)
     implicit none
@@ -131,29 +131,39 @@ contains
 
     !! Work variables and arrays
     integer :: k, m
-    real(dp), dimension(nlay) :: dtau, B1, B0, eps, dtau_a, T
-    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
+    real(dp), dimension(nlay) :: w0, hg
+    real(dp), dimension(nlay) :: dtau, Bln, eps, dtau_a, T
+    real(dp), dimension(nmu, nlay) :: Sp, Sm
+    real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
 
+    real(dp) :: nup, nun, const, first, second, third
+
+    
     !! Calculate dtau in each layer
     dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
 
-    !! Preparation loop
+    ! Delta eddington scaling
+    w0(:) = (1.0_dp - gg(:)**2)*ww(:)/(1.0_dp-ww(:)*gg(:)**2)
+    dtau(:) = (1.0_dp-ww(:)*gg(:)**2)*dtau(:)
+    hg(:) = gg(:)/(1.0_dp + gg(:))
+
+    !! Log B with tau function
     do k = 1, nlay
-      eps(k) = sqrt((1.0_dp - ww(k))*(1.0_dp - gg(k)*ww(k)))
-      dtau_a(k) = eps(k)*dtau(k)
-      if (dtau_a(k) < 1e-6_dp) then
-        B1(k) = 0.0_dp
-        B0(k) = 0.5_dp*(be(k+1) + be(k)) * eps(k)
+      if (dtau(k) < 1.0e-7_dp) then
+        ! Too low optical depth for numerical stability, Bln = 0
+        Bln(k) = 0.0_dp
       else
-        B1(k) = (be(k+1) - be(k))/dtau_a(k) ! Linear in tau term
-        B0(k) = be(k)
+        ! Log B with tau value
+        Bln(k) = log(be(k+1)/be(k))/dtau(k)
       end if
-      !print*, k, beta(k), 
     end do
 
-    ! Zero the total flux arrays
-    lw_up(:) = 0.0_dp
-    lw_down(:) = 0.0_dp
+    !! modified co-albedo epsilon
+    eps(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
+    !eps(:) = (1.0_dp - w0(:))
+
+    !! Absorption/modified optical depth for transmission function
+    dtau_a(:) = eps(:)*dtau(:)
 
     !! Start loops to integrate in mu space
     do m = 1, nmu
@@ -161,37 +171,114 @@ contains
       !! Begin two-stream loops
       !! Perform downward loop first
       ! Top boundary condition - 0 flux downward from top boundary
-      lw_down_g(1) = 0.0_dp
+      lw_down_g(m,1) = 0.0_dp
       do k = 1, nlay
         T(k) = exp(-dtau_a(k)/uarr(m))
-        lw_down_g(k+1) = lw_down_g(k)*T(k) + &
-          & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)*T(k)+dtau_a(k)-uarr(m)) ! TS intensity
+        nup = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
+        lw_down_g(m,k+1) = lw_down_g(m,k)*T(k) + &
+          & nup * (be(k+1) - be(k)*T(k))
           !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
       end do
 
       !! Perform upward loop
       if (surf .eqv. .True.) then
         ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
-        lw_up_g(nlev) = lw_down_g(nlev)*lw_a_surf + be_int
+        lw_up_g(m,nlev) = lw_down_g(m,nlev)*lw_a_surf + be_int
       else
         ! Lower boundary condition - internal heat definition Fint = F_down - F_up
         ! here the lw_a_surf is assumed to be = 1 as per the definition
         ! here we use the same condition but use intensity units to be consistent
-        lw_up_g(nlev) = lw_down_g(nlev) + be_int
+        lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
       end if
       do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*T(k) + & 
-          & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)-(dtau_a(k)+uarr(m))*T(k)) ! TS intensity
-         !print*, k, m, lw_up_g(k+1), (eps(k)/(uarr(m))*beta(k) + eps(k)), (be(k+1) - be(k)*exp(-dtau_a(k)/uarr(m))), dtau(k)
+        nun = 1.0_dp/(1.0_dp + -(uarr(m))*Bln(k)/eps(k))
+        lw_up_g(m,k) = lw_up_g(m,k+1)*T(k) + &
+          & nun * (be(k) - be(k+1)*T(k))
       end do
-
-      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
-      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
 
     end do
 
-    !! The flux is the intensity * 2pi
+    !! Find Sp and Sm - it's now best to put mu into the inner loop
+    ! Sp and Sm defined at lower level edges, zero upper boundary condition
+    Sp(:,:) = 0.0_dp
+    Sm(:,:) = 0.0_dp
+    do k = 1, nlay
+      if (ww(k) <= 1.0e-6_dp) then
+         Sp(:,k) = 0.0_dp
+         Sm(:,k) = 0.0_dp
+        cycle
+      end if
+      do m = 1, nmu
+        T(k) = exp(-dtau_a(k)/uarr(m))
+        nup = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
+        nun = 1.0_dp/(1.0_dp + -(uarr(m))*Bln(k)/eps(k))
+
+        !! Do positive direction Sp terms
+        first = dtau_a(k)/uarr(m)*T(k)*(lw_up_g(m,k+1) - nun*be(k+1))
+        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_down_g(m,k) - nup*be(k))
+        third = (nun - nup)*nun*(be(k) - be(k+1)*T(k))
+
+        Sp(m,k) = (first + second + third) * w(m)
+
+        !print*, m,k, dtau_a(k), T(k), (lw_up_g(m,k+1) - nun*be(k+1))
+        !print*, m,k,first, second, third, w(m)
+
+        !! Now Sm negative direction
+        first = dtau_a(k)/(uarr(m))*T(k)*(lw_down_g(m,k) - nup*be(k))
+        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_up_g(m,k+1) - nun*be(k+1))
+        third = (nup - nun)*nup*(be(k+1) - be(k)*T(k))
+
+        !print*, first, second, third, w(m)
+
+        Sm(m,k) = (first + second + third) * w(m)
+
+      end do
+    end do
+
+    ! Zero the total flux arrays
+    lw_up(:) = 0.0_dp
+    lw_down(:) = 0.0_dp
+
+    !! Do final two sweeps including scattering source function
+    do m = 1, nmu
+
+      !! Begin two-stream loops
+      !! Perform downward loop first
+      ! Top boundary condition - 0 flux downward from top boundary
+      lw_down_g(m,1) = 0.0_dp
+      do k = 1, nlay
+        T(k) = exp(-dtau_a(k)/uarr(m))
+        const = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
+        nup = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
+        lw_down_g(m,k+1) = lw_down_g(m,k)*T(k) + &
+          & nup * (be(k+1) - be(k)*T(k)) + const*Sm(m,k)
+          !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
+      end do
+
+      !! Perform upward loop
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(m,nlev) = lw_down_g(m,nlev)*lw_a_surf + be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
+      end if
+      do k = nlay, 1, -1
+        const = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
+        nun = 1.0_dp/(1.0_dp + -(uarr(m))*Bln(k)/eps(k))
+        lw_up_g(m,k) = lw_up_g(m,k+1)*T(k) + &
+          & nun * (be(k) - be(k+1)*T(k)) + const*Sp(m,k)
+      end do
+
+      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
+      lw_down(:) = lw_down(:) + lw_down_g(m,:) * wuarr(m)
+      lw_up(:) = lw_up(:) + lw_up_g(m,:) * wuarr(m)
+
+    end do
+
+    !! The flux is the integrated intensity * 2pi
     lw_down(:) = twopi * lw_down(:)
     lw_up(:) = twopi * lw_up(:)
 
@@ -364,4 +451,4 @@ contains
 
   end subroutine bezier_interp
 
-end module ts_LLF_AA_mod
+end module ts_AA_L_mod

@@ -7,7 +7,7 @@
 !     Cons: Not technically multiple scattering (can be quite innacurate at high albedo and g)
 !!!
 
-module ts_LLF_PM_mod
+module ts_AA_E_mod
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -32,12 +32,12 @@ module ts_LLF_PM_mod
   real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
 
-  public :: ts_LLF_PM
+  public :: ts_AA_E
   private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_LLF_PM(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+  subroutine ts_AA_E(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
     & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     implicit none
 
@@ -114,7 +114,7 @@ contains
     !! Output asr
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine ts_LLF_PM
+  end subroutine ts_AA_E
 
   subroutine lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_a_surf, lw_up, lw_down)
     implicit none
@@ -131,15 +131,21 @@ contains
 
     !! Work variables and arrays
     integer :: k, m
+    real(dp), dimension(nlay) :: w0, hg
     real(dp), dimension(nlay) :: dtau, Bln, eps, dtau_a, T
-    real(dp), dimension(nlev) :: Sp, Sm
+    real(dp), dimension(nmu, nlay) :: Sp, Sm
     real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
 
-    real(dp) :: phip, phin, nup, nun, first, second, third
+    real(dp) :: nup, nun, const, first, second, third
 
     
     !! Calculate dtau in each layer
     dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
+
+    ! Delta eddington scaling
+    w0(:) = (1.0_dp - gg(:)**2)*ww(:)/(1.0_dp-ww(:)*gg(:)**2)
+    dtau(:) = (1.0_dp-ww(:)*gg(:)**2)*dtau(:)
+    hg(:) = gg(:)/(1.0_dp + gg(:))
 
     !! Log B with tau function
     do k = 1, nlay
@@ -153,8 +159,8 @@ contains
     end do
 
     !! modified co-albedo epsilon
-    !eps(:) = sqrt((1.0_dp - ww(:))*(1.0_dp - gg(:)*ww(:)))
-    eps(:) = (1.0_dp - ww(:))
+    eps(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
+    !eps(:) = (1.0_dp - w0(:))
 
     !! Absorption/modified optical depth for transmission function
     dtau_a(:) = eps(:)*dtau(:)
@@ -168,10 +174,9 @@ contains
       lw_down_g(m,1) = 0.0_dp
       do k = 1, nlay
         T(k) = exp(-dtau_a(k)/uarr(m))
-        !lw_down_g(k+1) = lw_down_g(k)*T(k) + &
-        !  & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)*T(k)+dtau_a(k)-uarr(m)) ! TS intensity
+        nup = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
         lw_down_g(m,k+1) = lw_down_g(m,k)*T(k) + &
-          & eps(k)/(uarr(m)*Bln(k) + eps(k)) * (be(k+1) - be(k)*T(k))
+          & nup * (be(k+1) - be(k)*T(k))
           !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
       end do
 
@@ -186,50 +191,48 @@ contains
         lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
       end if
       do k = nlay, 1, -1
-        !lw_up_g(k) = lw_up_g(k+1)*T(k) + & 
-        !  & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)-(dtau_a(k)+uarr(m))*T(k)) ! TS intensity
+        nun = 1.0_dp/(1.0_dp + -(uarr(m))*Bln(k)/eps(k))
         lw_up_g(m,k) = lw_up_g(m,k+1)*T(k) + &
-           & eps(k)/(uarr(m)*Bln(k) - eps(k)) * (be(k+1)*T(k) - be(k))
-         !print*, k, m, lw_up_g(k+1), (eps(k)/(uarr(m))*beta(k) + eps(k)), (be(k+1) - be(k)*exp(-dtau_a(k)/uarr(m))), dtau(k)
+          & nun * (be(k) - be(k+1)*T(k))
       end do
 
     end do
 
     !! Find Sp and Sm - it's now best to put mu into the inner loop
     ! Sp and Sm defined at lower level edges, zero upper boundary condition
-    Sp(:) = 0.0_dp
-    Sm(:) = 0.0_dp
+    Sp(:,:) = 0.0_dp
+    Sm(:,:) = 0.0_dp
     do k = 1, nlay
-      if (ww(k) < 1.0e-6_dp) then
-         Sp(k) = 0.0_dp
-         Sm(k) = 0.0_dp
+      if (ww(k) <= 1.0e-6_dp) then
+         Sp(:,k) = 0.0_dp
+         Sm(:,k) = 0.0_dp
         cycle
       end if
       do m = 1, nmu
-        phip = 1.0_dp + 3.0_dp*gg(k)*uarr(m)*uarr(m)
-        phin = 1.0_dp + 3.0_dp*gg(k)*uarr(m)*-(uarr(m))
-        nup = eps(k)/(uarr(m)*Bln(k) - 1.0_dp)
-        nun = eps(k)/(-(uarr(m))*Bln(k) - 1.0_dp)
-        !! Add all three terms and multiply by weight - first do positive direction
-        first = (phin/(eps(k) + 1.0_dp)) * (1.0_dp - exp(-dtau_a(k)/uarr(m))*exp(-dtau(k)/uarr(m))) * &
-          & (lw_down_g(m,k) - nup*be(k))
-        second = (phip/(eps(k) - 1.0_dp)) * (exp(-dtau(k)/uarr(m)) - exp(-dtau_a(k)/uarr(m))) * &
-          & (lw_up_g(m,k+1) - nun*be(k+1))
-        third = 1.0_dp/(uarr(m)*Bln(k) - 1.0_dp) * (nup*phin + nun*phip) * (be(k+1)*exp(-dtau(k)/uarr(m)) - be(k))
-        Sp(k+1) = Sp(k+1) + (first + second + third) * w(m)
+        T(k) = exp(-dtau_a(k)/uarr(m))
+        nup = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
+        nun = 1.0_dp/(1.0_dp + -(uarr(m))*Bln(k)/eps(k))
 
-        !! Now do negative direction
-        first = (phin/(eps(k) + 1.0_dp)) * (1.0_dp - exp(-dtau_a(k)/uarr(m))*exp(-dtau(k)/uarr(m))) * &
-          & (lw_up_g(m,k+1) - nun*be(k+1))
-        second = (phip/(eps(k) - 1.0_dp)) * (exp(-dtau(k)/uarr(m)) - exp(-dtau_a(k)/uarr(m))) * &
-          & (lw_down_g(m,k) - nup*be(k))
-        third = 1.0_dp/(-(uarr(m))*Bln(k) - 1.0_dp) * (nun*phin + nup*phip) * (be(k)*exp(-dtau(k)/uarr(m)) - be(k+1))
-        Sm(k+1) = Sm(k+1) + (first + second + third) * w(m)
+        !! Do positive direction Sp terms
+        first = dtau_a(k)/uarr(m)*T(k)*(lw_up_g(m,k+1) - nun*be(k+1))
+        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_down_g(m,k) - nup*be(k))
+        third = (nun - nup)*nun*(be(k) - be(k+1)*T(k))
 
-        !print*, m, k, Sp(m, k+1), Sm(m, k+1)
+        Sp(m,k) = (first + second + third) * w(m)
+
+        !print*, m,k, dtau_a(k), T(k), (lw_up_g(m,k+1) - nun*be(k+1))
+        !print*, m,k,first, second, third, w(m)
+
+        !! Now Sm negative direction
+        first = dtau_a(k)/(uarr(m))*T(k)*(lw_down_g(m,k) - nup*be(k))
+        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_up_g(m,k+1) - nun*be(k+1))
+        third = (nup - nun)*nup*(be(k+1) - be(k)*T(k))
+
+        !print*, first, second, third, w(m)
+
+        Sm(m,k) = (first + second + third) * w(m)
+
       end do
-      Sp(k+1) = Sp(k+1) * ww(k)/2.0_dp
-      Sm(k+1) = Sm(k+1) * ww(k)/2.0_dp
     end do
 
     ! Zero the total flux arrays
@@ -244,11 +247,11 @@ contains
       ! Top boundary condition - 0 flux downward from top boundary
       lw_down_g(m,1) = 0.0_dp
       do k = 1, nlay
-        T(k) = exp(-dtau(k)/uarr(m))
-        !lw_down_g(k+1) = lw_down_g(k)*T(k) + &
-        !  & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)*T(k)+dtau_a(k)-uarr(m)) ! TS intensity
+        T(k) = exp(-dtau_a(k)/uarr(m))
+        const = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
+        nup = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
         lw_down_g(m,k+1) = lw_down_g(m,k)*T(k) + &
-          & eps(k)/(uarr(m)*Bln(k) + 1.0_dp) * (be(k+1) - be(k)*T(k)) + Sm(k+1)
+          & nup * (be(k+1) - be(k)*T(k)) + const*Sm(m,k)
           !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
       end do
 
@@ -263,11 +266,10 @@ contains
         lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
       end if
       do k = nlay, 1, -1
-        !lw_up_g(k) = lw_up_g(k+1)*T(k) + & 
-        !  & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)-(dtau_a(k)+uarr(m))*T(k)) ! TS intensity
-        lw_up_g(m,k) = lw_up_g(m,k+1)*T(k) - &
-           & eps(k)/(-(uarr(m))*Bln(k) + 1.0_dp) * (be(k+1)*T(k) - be(k)) + Sp(k+1)
-         !print*, k, m, lw_up_g(k+1), (eps(k)/(uarr(m))*beta(k) + eps(k)), (be(k+1) - be(k)*exp(-dtau_a(k)/uarr(m))), dtau(k)
+        const = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
+        nun = 1.0_dp/(1.0_dp + -(uarr(m))*Bln(k)/eps(k))
+        lw_up_g(m,k) = lw_up_g(m,k+1)*T(k) + &
+          & nun * (be(k) - be(k+1)*T(k)) + const*Sp(m,k)
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
@@ -449,4 +451,4 @@ contains
 
   end subroutine bezier_interp
 
-end module ts_LLF_PM_mod
+end module ts_AA_E_mod
