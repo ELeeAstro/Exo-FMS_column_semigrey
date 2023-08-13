@@ -40,7 +40,8 @@ module ts_short_char_mod_Bezier
   !! Lacis & Oinas (1991) 3 point numerical values - Does not work somehow, e-mail me if you know why :)
   ! integer, parameter :: nmu = 3
   ! real(dp), dimension(nmu), parameter :: uarr = (/0.1_dp, 0.5_dp, 1.0_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = (/0.0433_dp, 0.5742_dp, 0.3825_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = (/0.0433_dp, 0.5742_dp, 0.3825_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = w
 
   !! Legendre quadrature for 4 nodes
   ! integer, parameter :: nmu = 4
@@ -218,7 +219,7 @@ contains
       !! Begin two-stream loops
       !! Perform downward loop first
       ! Top boundary condition - 0 flux downward from top boundary
-      lw_down_g(1) = 0.0_dp
+      lw_down_g(1) = 0.0_dp !be(1) * (1.0_dp - edel(1)) !0.0_dp
       do k = 1, nlay
          lw_down_g(k+1) = lw_down_g(k)*edel(k) + Ak(k)*be(k+1) + Bk(k)*be(k) + Gk(k)*Ck(k)! TS intensity
       end do

@@ -275,7 +275,7 @@ contains
     real(dp), dimension(nlay) :: gradrad, gradad
 
     do k = 1, nlay-1
-      gradrad(k) = (log10(Tl(k))-log10(Tl(k+1)))/(log10(pl(k))-log10(pl(k+1)))
+      gradrad(k) = log(Tl(k)/Tl(k+1))/log(pl(k)/pl(k+1))
       gradad(k) = 0.32_dp - 0.10_dp*Tl(k)/3000.0_dp
       !print*, k, gradrad(k), gradad(k)
     end do

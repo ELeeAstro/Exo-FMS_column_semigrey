@@ -1,13 +1,13 @@
 !!!
-! Elspeth KH Lee - May 2021 : Initial version
-!                - Dec 2021 : adding method & Bezier interpolation
+! Elspeth KH Lee - Aug 2023 : Initial version
 ! sw: Adding layer method with scattering
-! lw: Two-stream method following the Mendonca methods
-!     Pros: Very fast
-!     Cons: Innaccurate at high optical depth
+! lw: n-stream Absorption Approximation (nAA) method following the Liou, Li and Fu papers (Li & Fu 2000, Fu et al. 1997, Li 2000) and similar
+! we use the linear in tau approach due to high temperature gradients and optical depths for exoplanets
+!     Pros: Very fast method with a LW scattering approximation, no matrix inversions
+!     Cons: Not technically multiple scattering (can be quite innacurate at high albedo), cannot use phase function
 !!!
 
-module ts_Mendonca_mod
+module ts_LLF_AA_mod
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -16,15 +16,29 @@ module ts_Mendonca_mod
 
   !! Required constants
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
+  real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  public :: ts_Mendonca
+  !! Legendre quadrature for 1 nodes
+  ! integer, parameter :: nmu = 1
+  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.66_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+
+  !! Legendre quadrature for 2 nodes
+  integer, parameter :: nmu = 2
+  real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
+  real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
+  real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+
+
+  public :: ts_LLF_AA
   private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_Mendonca(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-    & sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
+  subroutine ts_LLF_AA(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     implicit none
 
     !! Input variables
@@ -34,7 +48,7 @@ contains
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
-    real(dp), dimension(nlay), intent(in) :: sw_a, sw_g
+    real(dp), dimension(nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
 
     !! Output variables
     real(dp), intent(out) :: olr, asr, net_Fs
@@ -77,13 +91,13 @@ contains
     end if
 
     !! Longwave two-stream flux calculation
-    be(:) = sb * Te(:)**4  ! Integrated planck function intensity at levels
+    be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
     if (surf .eqv. .True.) then
-      be_int = sb * Ts**4
+      be_int = (sb * Ts**4)/pi
     else
-      be_int = sb * Tint**4 ! Integrated planck function intensity for internal temperature
+      be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
     end if
-    call lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe(:), lw_a_surf, lw_up(:), lw_down(:))
+    call lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe(:), lw_a, lw_g, lw_a_surf, lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -100,55 +114,86 @@ contains
     !! Output asr
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine ts_Mendonca
+  end subroutine ts_LLF_AA
 
-  subroutine lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe, lw_a_surf, lw_up, lw_down)
+  subroutine lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_a_surf, lw_up, lw_down)
     implicit none
 
     !! Input variables
     logical, intent(in) :: surf
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: be, tau_IRe
+    real(dp), dimension(nlay), intent(in) :: ww, gg
     real(dp), intent(in) :: be_int, lw_a_surf
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
 
     !! Work variables and arrays
-    integer :: k
-    real(dp), dimension(nlay) :: dtau, E, Es, r, mu, Tf
+    integer :: k, m
+    real(dp), dimension(nlay) :: dtau, B1, B0, eps, dtau_a, T
+    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
-    !! Calculate dtau in each layer and prepare loop
+    !! Calculate dtau in each layer
+    dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
+
+    !! Preparation loop
     do k = 1, nlay
-      dtau(k) = tau_IRe(k+1) - tau_IRe(k)
-      r(k) = 1.5_dp + 0.5_dp/(1.0_dp + 4.0_dp*dtau(k) + 10.0_dp*dtau(k)**2)
-      mu(k) = 1.0_dp/r(k)
-      Tf(k) = exp(-dtau(k)/mu(k))
-      E(k) = ((be(k+1) - be(k) * Tf(k)) * dtau(k)) / (dtau(k) - mu(k)*log(be(k)/be(k+1)))
-      Es(k) = ((be(k) - be(k+1) * Tf(k)) * dtau(k)) / (dtau(k) - mu(k)*log(be(k+1)/be(k)))
+      eps(k) = sqrt((1.0_dp - ww(k))*(1.0_dp - gg(k)*ww(k)))
+      dtau_a(k) = eps(k)*dtau(k)
+      if (dtau_a(k) < 1e-6_dp) then
+        B1(k) = 0.0_dp
+        B0(k) = 0.5_dp*(be(k+1) + be(k)) * eps(k)
+      else
+        B1(k) = (be(k+1) - be(k))/dtau_a(k) ! Linear in tau term
+        B0(k) = be(k)
+      end if
+      !print*, k, beta(k), 
     end do
 
-    !! Begin two-stream loops
-    !! Perform downward loop first
-    ! Top boundary condition - 0 flux downward from top boundary
-    lw_down(1) = 0.0_dp
-    do k = 1, nlay
-      lw_down(k+1) = lw_down(k)*Tf(k) + Es(k)
+    ! Zero the total flux arrays
+    lw_up(:) = 0.0_dp
+    lw_down(:) = 0.0_dp
+
+    !! Start loops to integrate in mu space
+    do m = 1, nmu
+
+      !! Begin two-stream loops
+      !! Perform downward loop first
+      ! Top boundary condition - 0 flux downward from top boundary
+      lw_down_g(1) = 0.0_dp
+      do k = 1, nlay
+        T(k) = exp(-dtau_a(k)/uarr(m))
+        lw_down_g(k+1) = lw_down_g(k)*T(k) + &
+          & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)*T(k)+dtau_a(k)-uarr(m)) ! TS intensity
+          !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
+      end do
+
+      !! Perform upward loop
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(nlev) = lw_down_g(nlev)*lw_a_surf + be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(nlev) = lw_down_g(nlev) + be_int
+      end if
+      do k = nlay, 1, -1
+        lw_up_g(k) = lw_up_g(k+1)*T(k) + & 
+          & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)-(dtau_a(k)+uarr(m))*T(k)) ! TS intensity
+         !print*, k, m, lw_up_g(k+1), (eps(k)/(uarr(m))*beta(k) + eps(k)), (be(k+1) - be(k)*exp(-dtau_a(k)/uarr(m))), dtau(k)
+      end do
+
+      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
+      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
+      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
+
     end do
 
-    !! Perform upward loop
-    if (surf .eqv. .True.) then
-      ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
-      lw_up(nlev) = lw_down(nlev)*lw_a_surf + be_int
-    else
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here the lw_a_surf is assumed to be = 1 as per the definition
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up(nlev) = lw_down(nlev) + be_int
-    end if
-    do k = nlay, 1, -1
-      lw_up(k) = lw_up(k+1)*Tf(k) + E(k)
-    end do
+    !! The flux is the intensity * 2pi
+    lw_down(:) = twopi * lw_down(:)
+    lw_up(:) = twopi * lw_up(:)
 
   end subroutine lw_grey_updown
 
@@ -319,4 +364,4 @@ contains
 
   end subroutine bezier_interp
 
-end module ts_Mendonca_mod
+end module ts_LLF_AA_mod

@@ -1,15 +1,13 @@
 !!!
-! Elspeth KH Lee - May 2021 : Initial version
-!                - Oct 2021 : adding method & Bezier interpolation
-!                - Aug 2023 Change quadrature following Li (2000)
+! Elspeth KH Lee - Aug 2023 : Initial version
 ! sw: Adding layer method with scattering
-! lw: Two-stream method following the short characteristics method (e.g. Helios-r2: Kitzmann et al. 2018)
-!     Uses the method of short characteristics (Olson & Kunasz 1987) with linear interpolants.
-!     Pros: Very fast, accurate at high optical depths, very stable
-!     Cons: No lw scattering
+! lw: Perturbation Method (PM) method following the Liou, Li and Fu papers (Li & Fu 2000, Fu et al. 1997, Li 2000) and similar
+! we use the linear in tau approach due to high temperature gradients and optical depths for exoplanets
+!     Pros: Very fast method with (much better than AA) LW scattering approximation, no matrix inversions
+!     Cons: Not technically multiple scattering (can be quite innacurate at high albedo and g)
 !!!
 
-module ts_short_char_mod_linear
+module ts_LLF_PM_mod
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -21,16 +19,11 @@ module ts_short_char_mod_linear
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
-  !! here you can comment in/out groups of mu values for testing
-  !! make sure to make clean and recompile if you change these
-
-  !! single angle diffusion factor approximation - typically 1/1.66 (Li 2000 = 1/1.6487213)
+  !! Legendre quadrature for 1 nodes
   ! integer, parameter :: nmu = 1
   ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/)
   ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
   ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
 
   !! Legendre quadrature for 2 nodes
   integer, parameter :: nmu = 2
@@ -38,41 +31,22 @@ module ts_short_char_mod_linear
   real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
   real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
-  !! Lacis & Oinas (1991) 3 point numerical values - Does not work somehow, e-mail me if you know why :)
-  ! integer, parameter :: nmu = 3
-  ! real(dp), dimension(nmu), parameter :: uarr = (/0.1_dp, 0.5_dp, 1.0_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = (/0.0433_dp, 0.5742_dp, 0.3825_dp/)
 
-  !! Legendre quadrature for 4 nodes
-  ! integer, parameter :: nmu = 4
-  ! real(dp), dimension(nmu), parameter :: uarr = &
-  !   & (/0.06943184_dp, 0.33000948_dp, 0.66999052_dp, 0.93056816_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = &
-  !   & (/0.17392742_dp, 0.32607258_dp, 0.32607258_dp, 0.17392742_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
-  !! 5 point EGP quadrature values
-  ! integer, parameter :: nmu = 5
-  ! real(dp), dimension(nmu), parameter :: uarr = &
-  !   &(/0.0985350858_dp, 0.3045357266_dp, 0.5620251898_dp, 0.8019865821_dp, 0.9601901429_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = &
-  !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
-
-  public :: ts_short_char_linear
-  private :: lw_grey_updown_linear, sw_grey_updown_adding, linear_interp, Bezier_interp
+  public :: ts_LLF_PM
+  private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_short_char_linear(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
-    & mu_z, F0, Tint, AB, sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
+  subroutine ts_LLF_PM(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+    & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     implicit none
 
     !! Input variables
-    logical, intent(in) :: Bezier, surf
+    logical, intent(in) :: surf, Bezier
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: Ts, F0, Tint, AB, sw_a_surf, lw_a_surf
+    real(dp), intent(in) :: F0, mu_z, Tint, AB, sw_a_surf, lw_a_surf, Ts
     real(dp), dimension(nlay), intent(in) :: Tl, pl
-    real(dp), dimension(nlev), intent(in) :: pe, mu_z
+    real(dp), dimension(nlev), intent(in) :: pe
     real(dp), dimension(nlev), intent(in) :: tau_Ve, tau_IRe
     real(dp), dimension(nlay), intent(in) :: sw_a, sw_g, lw_a, lw_g
 
@@ -84,42 +58,33 @@ contains
     integer :: i
     real(dp) :: Finc, be_int
     real(dp), dimension(nlev) :: Te, be
-    real(dp), dimension(nlev) :: lpe
-    real(dp), dimension(nlay) :: lTl, lpl
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
-
-    ! Log the layer values and pressure edges for more accurate interpolation
-    lTl(:) = log10(Tl(:))
-    lpl(:) = log10(pl(:))
-    lpe(:) = log10(pe(:))
 
     !! Find temperature at layer edges through interpolation and extrapolation
     if (Bezier .eqv. .True.) then
       ! Perform interpolation using Bezier peicewise polynomial interpolation
       do i = 2, nlay-1
-        call bezier_interp(lpl(i-1:i+1), lTl(i-1:i+1), 3, lpe(i), Te(i))
+        call bezier_interp(pl(i-1:i+1), Tl(i-1:i+1), 3, pe(i), Te(i))
         !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
       end do
-      call bezier_interp(lpl(nlay-2:nlay), lTl(nlay-2:nlay), 3, lpe(nlay), Te(nlay))
+      call bezier_interp(pl(nlay-2:nlay), Tl(nlay-2:nlay), 3, pe(nlay), Te(nlay))
     else
       ! Perform interpolation using linear interpolation
       do i = 2, nlay
-        call linear_interp(lpe(i), lpl(i-1), lpl(i), lTl(i-1), lTl(i), Te(i))
+        call linear_log_interp(pe(i), pl(i-1), pl(i), Tl(i-1), Tl(i), Te(i))
         !print*, i, pl(i), pl(i-1), pe(i), Tl(i-1), Tl(i), Te(i)
       end do
     end if
 
     ! Edges are linearly interpolated
-    Te(1) = (log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/10.0_dp**Te(2)))
-    Te(nlev) = (log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/10.0_dp**Te(nlay)))
-    ! De-log the temperature levels (edges)
-    Te(:) = 10.0_dp**Te(:)
+    Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
+    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Shortwave flux calculation
-    if (mu_z(nlev) > 0.0_dp) then
+    if (mu_z > 0.0_dp) then
       Finc = (1.0_dp - AB) * F0
-      call sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve(:), mu_z(:), sw_a, sw_g, sw_a_surf, sw_down(:), sw_up(:))
+      call sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve(:), mu_z, sw_a, sw_g, sw_a_surf, sw_down(:), sw_up(:))
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -132,8 +97,7 @@ contains
     else
       be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
     end if
-
-    call lw_grey_updown_linear(surf, nlay, nlev, be, be_int, lw_a, lw_g, lw_a_surf, tau_IRe(:), lw_up(:), lw_down(:))
+    call lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe(:), lw_a, lw_g, lw_a_surf, lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -150,16 +114,16 @@ contains
     !! Output asr
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine ts_short_char_linear
+  end subroutine ts_LLF_PM
 
-  subroutine lw_grey_updown_linear(surf, nlay, nlev, be, be_int, lw_a, lw_g, lw_a_surf, tau_IRe, lw_up, lw_down)
+  subroutine lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_a_surf, lw_up, lw_down)
     implicit none
 
     !! Input variables
     logical, intent(in) :: surf
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: be, tau_IRe
-    real(dp), dimension(nlay), intent(in) :: lw_a, lw_g
+    real(dp), dimension(nlay), intent(in) :: ww, gg
     real(dp), intent(in) :: be_int, lw_a_surf
 
     !! Output variables
@@ -167,89 +131,165 @@ contains
 
     !! Work variables and arrays
     integer :: k, m
-    real(dp), dimension(nlay) :: dtau, edel
-    real(dp), dimension(nlay) :: del, e0i, e1i, e1i_del
-    real(dp), dimension(nlay) :: Am, Bm, Gp, Bp
-    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
+    real(dp), dimension(nlay) :: dtau, Bln, eps, dtau_a, T
+    real(dp), dimension(nlev) :: Sp, Sm
+    real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
 
+    real(dp) :: phip, phin, nup, nun, first, second, third
+
+    
     !! Calculate dtau in each layer
     dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
 
-    !! Absorption approxmation
-    dtau(:) =  dtau(:) * (1.0_dp - lw_a(:))
+    !! Log B with tau function
+    do k = 1, nlay
+      if (dtau(k) < 1.0e-7_dp) then
+        ! Too low optical depth for numerical stability, Bln = 0
+        Bln(k) = 0.0_dp
+      else
+        ! Log B with tau value
+        Bln(k) = log(be(k+1)/be(k))/dtau(k)
+      end if
+    end do
 
-    ! Zero the total flux arrays
-    lw_up(:) = 0.0_dp
-    lw_down(:) = 0.0_dp
+    !! modified co-albedo epsilon
+    !eps(:) = sqrt((1.0_dp - ww(:))*(1.0_dp - gg(:)*ww(:)))
+    eps(:) = (1.0_dp - ww(:))
+
+    !! Absorption/modified optical depth for transmission function
+    dtau_a(:) = eps(:)*dtau(:)
 
     !! Start loops to integrate in mu space
     do m = 1, nmu
 
-      del(:) = dtau(:)/uarr(m)
-      edel(:) = exp(-del(:))
-      e0i(:) = 1.0_dp - edel(:)
-
-      !! Prepare loop
-      ! Olson & Kunasz (1987) linear interpolant parameters
-      where (edel(:) > 0.999_dp)
-        ! If we are in very low optical depth regime, then use an isothermal approximation
-        Am(:) = (0.5_dp*(be(2:) + be(1:nlay)) * e0i(:))/be(1:nlay)
-        Bm(:) = 0.0_dp
-        Gp(:) = 0.0_dp
-        Bp(:) = Am(:)
-      elsewhere
-        ! Use linear interpolants
-        e1i(:) = del(:) - e0i(:)
-        e1i_del(:) = e1i(:)/del(:) ! The equivalent to the linear in tau term
-
-        Am(:) = e0i(:) - e1i_del(:) ! Am(k) = Gp(k), just indexed differently
-        Bm(:) = e1i_del(:) ! Bm(k) = Bp(k), just indexed differently
-        Gp(:) = Am(:)
-        Bp(:) = Bm(:)
-      end where
-
       !! Begin two-stream loops
       !! Perform downward loop first
       ! Top boundary condition - 0 flux downward from top boundary
-      lw_down_g(1) = 0.0_dp
+      lw_down_g(m,1) = 0.0_dp
       do k = 1, nlay
-        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1) ! TS intensity
+        T(k) = exp(-dtau_a(k)/uarr(m))
+        !lw_down_g(k+1) = lw_down_g(k)*T(k) + &
+        !  & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)*T(k)+dtau_a(k)-uarr(m)) ! TS intensity
+        lw_down_g(m,k+1) = lw_down_g(m,k)*T(k) + &
+          & eps(k)/(uarr(m)*Bln(k) + eps(k)) * (be(k+1) - be(k)*T(k))
+          !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
       end do
 
       !! Perform upward loop
       if (surf .eqv. .True.) then
         ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
-        lw_up_g(nlev) = lw_down_g(nlev)*lw_a_surf + be_int
+        lw_up_g(m,nlev) = lw_down_g(m,nlev)*lw_a_surf + be_int
       else
         ! Lower boundary condition - internal heat definition Fint = F_down - F_up
         ! here the lw_a_surf is assumed to be = 1 as per the definition
         ! here we use the same condition but use intensity units to be consistent
-        lw_up_g(nlev) = lw_down_g(nlev) + be_int
+        lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
       end if
-
       do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
+        !lw_up_g(k) = lw_up_g(k+1)*T(k) + & 
+        !  & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)-(dtau_a(k)+uarr(m))*T(k)) ! TS intensity
+        lw_up_g(m,k) = lw_up_g(m,k+1)*T(k) + &
+           & eps(k)/(uarr(m)*Bln(k) - eps(k)) * (be(k+1)*T(k) - be(k))
+         !print*, k, m, lw_up_g(k+1), (eps(k)/(uarr(m))*beta(k) + eps(k)), (be(k+1) - be(k)*exp(-dtau_a(k)/uarr(m))), dtau(k)
       end do
-
-      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
-      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
 
     end do
 
-    !! The flux is the intensity * 2pi
+    !! Find Sp and Sm - it's now best to put mu into the inner loop
+    ! Sp and Sm defined at lower level edges, zero upper boundary condition
+    Sp(:) = 0.0_dp
+    Sm(:) = 0.0_dp
+    do k = 1, nlay
+      if (ww(k) < 1.0e-6_dp) then
+         Sp(k) = 0.0_dp
+         Sm(k) = 0.0_dp
+        cycle
+      end if
+      do m = 1, nmu
+        phip = 1.0_dp + 3.0_dp*gg(k)*uarr(m)*uarr(m)
+        phin = 1.0_dp + 3.0_dp*gg(k)*uarr(m)*-(uarr(m))
+        nup = eps(k)/(uarr(m)*Bln(k) - 1.0_dp)
+        nun = eps(k)/(-(uarr(m))*Bln(k) - 1.0_dp)
+        !! Add all three terms and multiply by weight - first do positive direction
+        first = (phin/(eps(k) + 1.0_dp)) * (1.0_dp - exp(-dtau_a(k)/uarr(m))*exp(-dtau(k)/uarr(m))) * &
+          & (lw_down_g(m,k) - nup*be(k))
+        second = (phip/(eps(k) - 1.0_dp)) * (exp(-dtau(k)/uarr(m)) - exp(-dtau_a(k)/uarr(m))) * &
+          & (lw_up_g(m,k+1) - nun*be(k+1))
+        third = 1.0_dp/(uarr(m)*Bln(k) - 1.0_dp) * (nup*phin + nun*phip) * (be(k+1)*exp(-dtau(k)/uarr(m)) - be(k))
+        Sp(k+1) = Sp(k+1) + (first + second + third) * w(m)
+
+        !! Now do negative direction
+        first = (phin/(eps(k) + 1.0_dp)) * (1.0_dp - exp(-dtau_a(k)/uarr(m))*exp(-dtau(k)/uarr(m))) * &
+          & (lw_up_g(m,k+1) - nun*be(k+1))
+        second = (phip/(eps(k) - 1.0_dp)) * (exp(-dtau(k)/uarr(m)) - exp(-dtau_a(k)/uarr(m))) * &
+          & (lw_down_g(m,k) - nup*be(k))
+        third = 1.0_dp/(-(uarr(m))*Bln(k) - 1.0_dp) * (nun*phin + nup*phip) * (be(k)*exp(-dtau(k)/uarr(m)) - be(k+1))
+        Sm(k+1) = Sm(k+1) + (first + second + third) * w(m)
+
+        !print*, m, k, Sp(m, k+1), Sm(m, k+1)
+      end do
+      Sp(k+1) = Sp(k+1) * ww(k)/2.0_dp
+      Sm(k+1) = Sm(k+1) * ww(k)/2.0_dp
+    end do
+
+    ! Zero the total flux arrays
+    lw_up(:) = 0.0_dp
+    lw_down(:) = 0.0_dp
+
+    !! Do final two sweeps including scattering source function
+    do m = 1, nmu
+
+      !! Begin two-stream loops
+      !! Perform downward loop first
+      ! Top boundary condition - 0 flux downward from top boundary
+      lw_down_g(m,1) = 0.0_dp
+      do k = 1, nlay
+        T(k) = exp(-dtau(k)/uarr(m))
+        !lw_down_g(k+1) = lw_down_g(k)*T(k) + &
+        !  & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)*T(k)+dtau_a(k)-uarr(m)) ! TS intensity
+        lw_down_g(m,k+1) = lw_down_g(m,k)*T(k) + &
+          & eps(k)/(uarr(m)*Bln(k) + 1.0_dp) * (be(k+1) - be(k)*T(k)) + Sm(k+1)
+          !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
+      end do
+
+      !! Perform upward loop
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(m,nlev) = lw_down_g(m,nlev)*lw_a_surf + be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
+      end if
+      do k = nlay, 1, -1
+        !lw_up_g(k) = lw_up_g(k+1)*T(k) + & 
+        !  & B0(k)*(1.0_dp - T(k)) + B1(k)*(uarr(m)-(dtau_a(k)+uarr(m))*T(k)) ! TS intensity
+        lw_up_g(m,k) = lw_up_g(m,k+1)*T(k) - &
+           & eps(k)/(-(uarr(m))*Bln(k) + 1.0_dp) * (be(k+1)*T(k) - be(k)) + Sp(k+1)
+         !print*, k, m, lw_up_g(k+1), (eps(k)/(uarr(m))*beta(k) + eps(k)), (be(k+1) - be(k)*exp(-dtau_a(k)/uarr(m))), dtau(k)
+      end do
+
+      !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
+      lw_down(:) = lw_down(:) + lw_down_g(m,:) * wuarr(m)
+      lw_up(:) = lw_up(:) + lw_up_g(m,:) * wuarr(m)
+
+    end do
+
+    !! The flux is the integrated intensity * 2pi
     lw_down(:) = twopi * lw_down(:)
     lw_up(:) = twopi * lw_up(:)
 
-  end subroutine lw_grey_updown_linear
+  end subroutine lw_grey_updown
+
 
   subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: Finc, w_surf
-    real(dp), dimension(nlev), intent(in) :: tau_Ve, mu_z
+    real(dp), intent(in) :: Finc, mu_z, w_surf
+    real(dp), dimension(nlev), intent(in) :: tau_Ve
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
 
     !! Output variables
@@ -265,7 +305,6 @@ contains
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
     real(dp), dimension(nlev) :: R_b, T_b, R, T
     real(dp), dimension(nlev) :: Tf
-    real(dp), dimension(nlev) :: cum_trans
 
     ! Design w and g to include surface property level
     w(1:nlay) = w_in(:)
@@ -276,26 +315,10 @@ contains
 
     ! If zero albedo across all atmospheric layers then return direct beam only
     if (all(w(:) <= 1.0e-12_dp)) then
-
-      if (mu_z(nlev) == mu_z(1)) then
-        ! No zenith correction, use regular method
-        sw_down(:) = Finc * mu_z(nlev) * exp(-tau_Ve(:)/mu_z(nlev))
-      else
-        ! Zenith angle correction, use cumulative transmission function
-        cum_trans(1) = tau_Ve(1)/mu_z(1)
-        do k = 1, nlev-1
-          cum_trans(k+1) = cum_trans(k) + (tau_Ve(k+1) - tau_Ve(k))/mu_z(k+1)
-        end do
-        do k = 1, nlev
-          sw_down(k) = Finc * mu_z(nlev) * exp(-cum_trans(k))
-        end do
-      end if
-
+      sw_down(:) = Finc * mu_z * exp(-tau_Ve(:)/mu_z)
       sw_down(nlev) = sw_down(nlev) * (1.0_dp - w_surf) ! The surface flux for surface heating is the amount of flux absorbed by surface
       sw_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
-
       return
-
     end if
 
     w(nlev) = w_surf
@@ -317,8 +340,8 @@ contains
       w_s(k) = w(k) * ((1.0_dp - f(k))/(1.0_dp - w(k)*f(k)))
       g_s(k) = (g(k) - f(k))/(1.0_dp - f(k))
       lam(k) = sqrt(3.0_dp*(1.0_dp - w_s(k))*(1.0_dp - w_s(k)*g_s(k)))
-      gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z(k)**2)/(1.0_dp - lam(k)**2*mu_z(k)**2)
-      alp(k) = 0.75_dp * w_s(k) * mu_z(k) * (1.0_dp + g_s(k)*(1.0_dp - w_s(k)))/(1.0_dp - lam(k)**2*mu_z(k)**2)
+      gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z**2)/(1.0_dp - lam(k)**2*mu_z**2)
+      alp(k) = 0.75_dp * w_s(k) * mu_z * (1.0_dp + g_s(k)*(1.0_dp - w_s(k)))/(1.0_dp - lam(k)**2*mu_z**2)
       u(k) = (3.0_dp/2.0_dp) * ((1.0_dp - w_s(k)*g_s(k))/lam(k))
 
       lamtau = min(lam(k)*tau_Ve_s(k),99.0_dp)
@@ -329,7 +352,7 @@ contains
       R_b(k) = (u(k) + 1.0_dp)*(u(k) - 1.0_dp)*(1.0_dp/e_lamtau - e_lamtau)/N(k)
       T_b(k) = 4.0_dp * u(k)/N(k)
 
-      arg = min(tau_Ve_s(k)/mu_z(k),99.0_dp)
+      arg = min(tau_Ve_s(k)/mu_z,99.0_dp)
       Tf(k) = exp(-arg)
 
       apg = alp(k) + gam(k)
@@ -360,26 +383,29 @@ contains
     sw_up(nlev) = sw_down(nlev) * w_surf
 
     !! Scale with the incident flux
-    sw_down(:) = sw_down(:) * mu_z(nlev) * Finc
-    sw_up(:) = sw_up(:) * mu_z(nlev) * Finc
+    sw_down(:) = sw_down(:) * mu_z * Finc
+    sw_up(:) = sw_up(:) * mu_z * Finc
 
   end subroutine sw_grey_updown_adding
 
-  ! Perform linear interpolation
-  subroutine linear_interp(xval, x1, x2, y1, y2, yval)
+  ! Perform linear interpolation in log10 space
+  subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)
     implicit none
 
     real(dp), intent(in) :: xval, y1, y2, x1, x2
+    real(dp) :: ly1, ly2
     real(dp), intent(out) :: yval
     real(dp) :: norm
 
-    norm = 1.0_dp / (x2 - x1)
+    ly1 = log10(y1); ly2 = log10(y2)
 
-    yval = (y1 * (x2 - xval) + y2 * (xval - x1)) * norm
+    norm = 1.0_dp / log10(x2/x1)
 
-  end subroutine linear_interp
+    yval = 10.0_dp**((ly1 * log10(x2/xval) + ly2 * log10(xval/x1)) * norm)
 
-  subroutine Bezier_interp(xi, yi, ni, x, y)
+  end subroutine linear_log_interp
+
+  subroutine bezier_interp(xi, yi, ni, x, y)
     implicit none
 
     integer, intent(in) :: ni
@@ -421,6 +447,6 @@ contains
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
     end if
 
-  end subroutine Bezier_interp
+  end subroutine bezier_interp
 
-end module ts_short_char_mod_linear
+end module ts_LLF_PM_mod
