@@ -205,10 +205,10 @@ contains
 
     !! Find Sp and Sm - it's now best to put mu into the inner loop
     ! Sp and Sm defined at lower level edges, zero upper boundary condition
-    Sp(:,:) = 0.0_dp
-    Sm(:,:) = 0.0_dp
+    !Sp(:,:) = 0.0_dp
+    !Sm(:,:) = 0.0_dp
     do k = 1, nlay
-      if (ww(k) <= 1.0e-6_dp) then
+      if (w0(k) <= 1.0e-6_dp) then
          Sp(:,k) = 0.0_dp
          Sm(:,k) = 0.0_dp
         cycle

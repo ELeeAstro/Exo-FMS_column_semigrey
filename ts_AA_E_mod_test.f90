@@ -130,13 +130,13 @@ contains
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
 
     !! Work variables and arrays
-    integer :: k, m
+    integer :: k, m, i, j
     real(dp), dimension(nlay) :: w0, hg
     real(dp), dimension(nlay) :: dtau, Bln, eps, dtau_a
     real(dp), dimension(nmu, nlay) :: Sp, Sm, T, nup, nun, const
     real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
 
-    real(dp) :: first, second, third
+    real(dp) :: first, second, nupi, nuni, nupj, nunj, phip, phin, B_eps
 
     
     !! Calculate dtau in each layer
@@ -178,7 +178,6 @@ contains
         T(m,k) = exp(-dtau_a(k)/uarr(m))
         nup(m,k) = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
         nun(m,k) = 1.0_dp/(1.0_dp - uarr(m)*Bln(k)/eps(k))
-        const(m,k) = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
 
         lw_down_g(m,k+1) = lw_down_g(m,k)*T(m,k) + &
           & nup(m,k) * (be(k+1) - be(k)*T(m,k))
@@ -204,32 +203,81 @@ contains
 
     !! Find Sp and Sm - it's now best to put mu into the inner loop
     ! Sp and Sm defined at lower level edges, zero upper boundary condition
-    Sp(:,:) = 0.0_dp
-    Sm(:,:) = 0.0_dp
+    !Sp(:,:) = 0.0_dp
+    !Sm(:,:) = 0.0_dp
     do k = 1, nlay
-      if (ww(k) <= 1.0e-6_dp) then
+      if (w0(k) <= 1.0e-6_dp) then
          Sp(:,k) = 0.0_dp
          Sm(:,k) = 0.0_dp
         cycle
       end if
-      do m = 1, nmu
+      do i = 1, nmu
 
-        !! Do positive direction Sp terms
-        first = dtau_a(k)/uarr(m)*T(m,k)*(lw_up_g(m,k+1) - nun(m,k)*be(k+1))
-        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_down_g(m,k) - nup(m,k)*be(k))
-        third = (nun(m,k) - nup(m,k))*nun(m,k)*(be(k) - be(k+1)*T(m,k))
+        Sp(i,k) = 0.0_dp
+        Sm(i,k) = 0.0_dp
 
-        Sp(m,k) = (first + second + third) * w(m)
+        nupi = 1.0_dp/(1.0_dp + uarr(i)*Bln(k)/eps(k))
+        nuni = 1.0_dp/(1.0_dp - uarr(i)*Bln(k)/eps(k))
 
-        !! Now Sm negative direction
-        first = dtau_a(k)/(uarr(m))*T(m,k)*(lw_down_g(m,k) - nup(m,k)*be(k))
-        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_up_g(m,k+1) - nun(m,k)*be(k+1))
-        third = (nup(m,k) - nun(m,k))*nup(m,k)*(be(k+1) - be(k)*T(m,k))
+        do j = 1, nmu
 
-        Sm(m,k) = (first + second + third) * w(m)
+          nupj = 1.0_dp/(1.0_dp + uarr(j)*Bln(k)/eps(k))
+          nunj = 1.0_dp/(1.0_dp - uarr(j)*Bln(k)/eps(k))
 
+          !phip = 1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j)
+          !phin = 1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j)
+
+          if (j == i) then
+            B_eps = dtau_a(k)/uarr(i)
+            phip = 1.0_dp - (1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
+            phin = 1.0_dp - (1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
+          else
+            B_eps = 1.0_dp/(uarr(i)/uarr(j) - 1.0_dp) * (exp(-dtau_a(k)/uarr(i)) - exp(-dtau_a(k)/uarr(j)))
+            phip = 0.0_dp - (1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
+            phin = 0.0_dp - (1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
+          end if
+
+          !! Do positive direction Sp terms
+          first = phip * (B_eps*(lw_up_g(j,k+1) - nunj*be(k+1)) + &
+            & nunj*nuni*(be(k) - be(k+1)*exp(-dtau_a(k)/uarr(i))))
+
+          second = phin * (1.0_dp/(uarr(i)/uarr(j) + 1.0_dp) * &
+            & (1.0_dp - exp(-dtau_a(k)/uarr(i))*exp(-dtau_a(k)/uarr(j)))*(lw_down_g(j,k) - nupj*be(k)) + &
+            & nupj*nuni*(be(k) - be(k+1)*exp(-dtau_a(k)/uarr(i))))
+
+          Sp(i,k) = Sp(i,k) + (first + second)
+
+          ! print*, k, i,j
+          ! print*, phip, phin, B_eps
+          ! print*, nupi, nuni, nupj, nupi
+          
+          ! print*, first, second, Sp(i,k)
+
+          !! Now Sm negative direction
+          first = phip * (B_eps*(lw_down_g(j,k) - nupj*be(k)) + &
+            & nupj*nupi*(be(k+1) - be(k)*exp(-dtau_a(k)/uarr(i))))
+
+          second = phin * (1.0_dp/((uarr(i))/uarr(j) + 1.0_dp) * &
+            & (1.0_dp - exp(-dtau_a(k)/uarr(i))*exp(-dtau_a(k)/uarr(j)))*(lw_up_g(j,k+1) - nunj*be(k+1)) + &
+            & nunj*nupi*(be(k+1) - be(k)*exp(-dtau_a(k)/uarr(i))))
+
+
+          Sm(i,k) = Sm(i,k) +  (first + second)
+
+          !print*, k, i,j, Sm(i,k), first, second
+
+        end do
+
+        Sp(i,k) = Sp(i,k) * w(i)
+        Sm(i,k) = Sm(i,k) * w(i)
+
+        !print*, Sp(:,k), Sm(:,k)
       end do
+        Sp(:,k) = -Sp(:,k)/eps(k)
+        Sm(:,k) = -Sm(:,k)/eps(k)
     end do
+
+    !stop
 
     ! Zero the total flux arrays
     lw_up(:) = 0.0_dp
@@ -244,7 +292,7 @@ contains
       lw_down_g(m,1) = 0.0_dp
       do k = 1, nlay
         lw_down_g(m,k+1) = lw_down_g(m,k)*T(m,k) + &
-          & nup(m,k) * (be(k+1) - be(k)*T(m,k)) + const(m,k)*Sm(m,k)
+          & nup(m,k) * (be(k+1) - be(k)*T(m,k)) + w0(k)*Sm(m,k)
           !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
       end do
 
@@ -261,7 +309,7 @@ contains
       do k = nlay, 1, -1
         !const = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
         lw_up_g(m,k) = lw_up_g(m,k+1)*T(m,k) + &
-          & nun(m,k) * (be(k) - be(k+1)*T(m,k)) + const(m,k)*Sp(m,k)
+          & nun(m,k) * (be(k) - be(k+1)*T(m,k)) + w0(k)*Sp(m,k)
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
