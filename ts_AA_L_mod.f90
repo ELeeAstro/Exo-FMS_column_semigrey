@@ -132,11 +132,11 @@ contains
     !! Work variables and arrays
     integer :: k, m
     real(dp), dimension(nlay) :: w0, hg
-    real(dp), dimension(nlay) :: dtau, Bln, eps, dtau_a, T
-    real(dp), dimension(nmu, nlay) :: Sp, Sm
+    real(dp), dimension(nlay) :: dtau, Blin, eps,  dtau_a
+    real(dp), dimension(nmu, nlay) :: Sp, Sm, T, zeta, const
     real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
 
-    real(dp) :: nup, nun, const, first, second, third
+    real(dp) ::  first, second, third
 
     
     !! Calculate dtau in each layer
@@ -149,12 +149,12 @@ contains
 
     !! Log B with tau function
     do k = 1, nlay
-      if (dtau(k) < 1.0e-7_dp) then
+      if (dtau(k) < 1.0e-6_dp) then
         ! Too low optical depth for numerical stability, Bln = 0
-        Bln(k) = 0.0_dp
+        Blin(k) = 0.0_dp
       else
-        ! Log B with tau value
-        Bln(k) = log(be(k+1)/be(k))/dtau(k)
+        ! Linear with tau Planck function 
+        Blin(k) = (be(k+1)-be(k))
       end if
     end do
 
@@ -173,11 +173,15 @@ contains
       ! Top boundary condition - 0 flux downward from top boundary
       lw_down_g(m,1) = 0.0_dp
       do k = 1, nlay
-        T(k) = exp(-dtau_a(k)/uarr(m))
-        nup = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
-        lw_down_g(m,k+1) = lw_down_g(m,k)*T(k) + &
-          & nup * (be(k+1) - be(k)*T(k))
-          !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
+
+        !! Efficency variables
+        T(m,k) = exp(-dtau_a(k)/uarr(m))
+        zeta(m,k) = (Blin(k)*uarr(m)/dtau_a(k))
+        const(m,k) = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
+
+        lw_down_g(m,k+1) = lw_down_g(m,k)*T(m,k) + &
+          & be(k+1) - zeta(m,k) - (be(k) - zeta(m,k))*T(m,k)
+        !print*, k, m, lw_down_g(m,k+1), T(k), zeta
       end do
 
       !! Perform upward loop
@@ -191,9 +195,10 @@ contains
         lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
       end if
       do k = nlay, 1, -1
-        nun = 1.0_dp/(1.0_dp + -(uarr(m))*Bln(k)/eps(k))
-        lw_up_g(m,k) = lw_up_g(m,k+1)*T(k) + &
-          & nun * (be(k) - be(k+1)*T(k))
+        lw_up_g(m,k) = lw_up_g(m,k+1)*T(m,k) + &
+          & be(k) + zeta(m,k) - (be(k+1) + zeta(m,k))*T(m,k)
+        !print*, k, m, lw_up_g(m,k+1), T(k), zeta
+
       end do
 
     end do
@@ -209,14 +214,11 @@ contains
         cycle
       end if
       do m = 1, nmu
-        T(k) = exp(-dtau_a(k)/uarr(m))
-        nup = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
-        nun = 1.0_dp/(1.0_dp + -(uarr(m))*Bln(k)/eps(k))
 
         !! Do positive direction Sp terms
-        first = dtau_a(k)/uarr(m)*T(k)*(lw_up_g(m,k+1) - nun*be(k+1))
-        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_down_g(m,k) - nup*be(k))
-        third = (nun - nup)*nun*(be(k) - be(k+1)*T(k))
+        first = dtau_a(k)/uarr(m)*T(m,k)*(lw_up_g(m,k+1) - (be(k+1) + zeta(m,k)))
+        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_down_g(m,k) - (be(k) - zeta(m,k)))
+        third = 2.0_dp * zeta(m,k) * (1.0_dp - T(m,k))
 
         Sp(m,k) = (first + second + third) * w(m)
 
@@ -224,9 +226,9 @@ contains
         !print*, m,k,first, second, third, w(m)
 
         !! Now Sm negative direction
-        first = dtau_a(k)/(uarr(m))*T(k)*(lw_down_g(m,k) - nup*be(k))
-        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_up_g(m,k+1) - nun*be(k+1))
-        third = (nup - nun)*nup*(be(k+1) - be(k)*T(k))
+        first = dtau_a(k)/uarr(m)*T(m,k)*(lw_down_g(m,k) - (be(k) - zeta(m,k)))
+        second = 0.5_dp * (exp(-2.0_dp*dtau_a(k)/uarr(m)) - 1.0_dp)*(lw_up_g(m,k+1) - (be(k+1) + zeta(m,k)))
+        third = 2.0_dp * -(zeta(m,k)) * (1.0_dp - T(m,k))
 
         !print*, first, second, third, w(m)
 
@@ -247,11 +249,8 @@ contains
       ! Top boundary condition - 0 flux downward from top boundary
       lw_down_g(m,1) = 0.0_dp
       do k = 1, nlay
-        T(k) = exp(-dtau_a(k)/uarr(m))
-        const = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
-        nup = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
-        lw_down_g(m,k+1) = lw_down_g(m,k)*T(k) + &
-          & nup * (be(k+1) - be(k)*T(k)) + const*Sm(m,k)
+        lw_down_g(m,k+1) = lw_down_g(m,k)*T(m,k) + &
+          & be(k+1) - zeta(m,k) - (be(k) - zeta(m,k))*T(m,k) + const(m,k)*Sm(m,k)
           !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
       end do
 
@@ -266,10 +265,8 @@ contains
         lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
       end if
       do k = nlay, 1, -1
-        const = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
-        nun = 1.0_dp/(1.0_dp + -(uarr(m))*Bln(k)/eps(k))
-        lw_up_g(m,k) = lw_up_g(m,k+1)*T(k) + &
-          & nun * (be(k) - be(k+1)*T(k)) + const*Sp(m,k)
+        lw_up_g(m,k) = lw_up_g(m,k+1)*T(m,k) + &
+          & be(k) + zeta(m,k) - (be(k+1) + zeta(m,k))*T(m,k) + const(m,k)*Sp(m,k)
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
