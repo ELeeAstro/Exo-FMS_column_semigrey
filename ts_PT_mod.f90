@@ -1,13 +1,14 @@
 !!!
+! NOTE: IN DEVELOPMENT DO NOT USE
 ! Elspeth KH Lee - Aug 2023 : Initial version
 ! sw: Adding layer method with scattering
-! lw: Perturbation Method (PM) method following the Liou, Li and Fu papers (Li & Fu 2000, Fu et al. 1997, Li 2000) and similar
-! we use the linear in tau approach due to high temperature gradients and optical depths for exoplanets
-!     Pros: Very fast method with (much better than AA) LW scattering approximation, no matrix inversions
-!     Cons: Not technically multiple scattering (can be quite innacurate at high albedo and g)
+! lw: Perturbation Theory following Li & Fu (2000) and Li (2002)
+!     uses AA to find an initial guess, then applies Perturbation theory to get the scattering component
+! Pros: Very fast method with LW scattering approximation, no matrix inversions - better than AA alone
+! Cons: Not technically multiple scattering, but 4-stream version is very decent approximation
 !!!
 
-module ts_AA_E_mod
+module ts_PT_mod
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -20,24 +21,24 @@ module ts_AA_E_mod
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
   !! Legendre quadrature for 1 nodes
-  ! integer, parameter :: nmu = 1
-  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
-  !! Legendre quadrature for 2 nodes
-  integer, parameter :: nmu = 2
-  real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
-  real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
+  integer, parameter :: nmu = 1
+  real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/)
+  real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
   real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
+  !! Legendre quadrature for 2 nodes
+  ! integer, parameter :: nmu = 2
+  ! real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
-  public :: ts_AA_E
+
+  public :: ts_PT
   private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
 
 contains
 
-  subroutine ts_AA_E(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+  subroutine ts_PT(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
     & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     implicit none
 
@@ -114,7 +115,7 @@ contains
     !! Output asr
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine ts_AA_E
+  end subroutine ts_PT
 
   subroutine lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_a_surf, lw_up, lw_down)
     implicit none
@@ -136,7 +137,7 @@ contains
     real(dp), dimension(nmu, nlay) :: Sp, Sm, T, nup, nun, const
     real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
 
-    real(dp) :: first, second, nupi, nuni, nupj, nunj, phip, phin, B_eps
+    real(dp) :: first, second, third, nupi, nuni, nupj, nunj, phip, phin
 
     
     !! Calculate dtau in each layer
@@ -159,8 +160,8 @@ contains
     end do
 
     !! modified co-albedo epsilon
-    eps(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
-    !eps(:) = (1.0_dp - w0(:))
+    !eps(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
+    eps(:) = (1.0_dp - w0(:))
 
     !! Absorption/modified optical depth for transmission function
     dtau_a(:) = eps(:)*dtau(:)
@@ -203,8 +204,6 @@ contains
 
     !! Find Sp and Sm - it's now best to put mu into the inner loop
     ! Sp and Sm defined at lower level edges, zero upper boundary condition
-    !Sp(:,:) = 0.0_dp
-    !Sm(:,:) = 0.0_dp
     do k = 1, nlay
       if (w0(k) <= 1.0e-6_dp) then
          Sp(:,k) = 0.0_dp
@@ -224,70 +223,48 @@ contains
           nupj = 1.0_dp/(1.0_dp + uarr(j)*Bln(k)/eps(k))
           nunj = 1.0_dp/(1.0_dp - uarr(j)*Bln(k)/eps(k))
 
-          !phip = 1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j)
-          !phin = 1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j)
-
-          if (j == i) then
-            B_eps = dtau_a(k)/uarr(i)
-            phip = 1.0_dp - (1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
-            phin = 1.0_dp - (1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
-          else
-            B_eps = 1.0_dp/(uarr(i)/uarr(j) - 1.0_dp) * (exp(-dtau_a(k)/uarr(i)) - exp(-dtau_a(k)/uarr(j)))
-            phip = 0.0_dp - (1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
-            phin = 0.0_dp - (1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
-          end if
+          phip = 1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j)
+          phin = 1.0_dp + 3.0_dp*hg(k)*uarr(i)*-(uarr(j))
 
           !! Do positive direction Sp terms
-          first = phip * (B_eps*(lw_up_g(j,k+1) - nunj*be(k+1)) + &
-            & nunj*nuni*(be(k) - be(k+1)*exp(-dtau_a(k)/uarr(i))))
+          first = phin/(eps(k)*uarr(i)/uarr(j) + 1.0_dp) * &
+            & (1.0_dp - exp(-dtau_a(k)/uarr(j))*exp(-dtau(k)/uarr(j))) * (lw_down_g(j,k) - nupj*be(k))
 
-          second = phin * (1.0_dp/(uarr(i)/uarr(j) + 1.0_dp) * &
-            & (1.0_dp - exp(-dtau_a(k)/uarr(i))*exp(-dtau_a(k)/uarr(j)))*(lw_down_g(j,k) - nupj*be(k)) + &
-            & nupj*nuni*(be(k) - be(k+1)*exp(-dtau_a(k)/uarr(i))))
+          second = phip/(eps(k)*uarr(i)/uarr(j) - 1.0_dp) * &
+            & (exp(-dtau(k)/uarr(i)) - exp(-dtau_a(k)/uarr(j))) * (lw_up_g(j,k+1) - nunj*be(k+1))
 
-          Sp(i,k) = Sp(i,k) + (first + second)
+          third = 1.0_dp/(Bln(k)*uarr(i) - 1.0_dp) * & 
+            & (nupj*phin + nunj*phip) * (be(k+1)*exp(-dtau(k)/uarr(i)) - be(k))
 
-          ! print*, k, i,j
+          Sp(i,k) = Sp(i,k) + (first + second + third) * w(j)
+
+          print*, k, i, j
           ! print*, phip, phin, B_eps
-          ! print*, nupi, nuni, nupj, nupi
+          ! print*, nuni, nupj
           
-          ! print*, first, second, Sp(i,k)
-
-          if (j == i) then
-            B_eps = dtau_a(k)/uarr(i)
-            phip = 1.0_dp - (1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
-            phin = 1.0_dp - (1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
-          else
-            B_eps = 1.0_dp/(uarr(i)/uarr(j) - 1.0_dp) * (exp(-dtau_a(k)/uarr(i)) - exp(-dtau_a(k)/uarr(j)))
-            phip = 0.0_dp - (1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
-            phin = 0.0_dp - (1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
-          end if
+          !print*, first, second, third, Sp(i,k)
 
           !! Now Sm negative direction
-          first = phip * (B_eps*(lw_down_g(j,k) - nupj*be(k)) + &
-            & nupj*nupi*(be(k+1) - be(k)*exp(-dtau_a(k)/uarr(i))))
+          first = phin/(eps(k)*uarr(i)/uarr(j) + 1.0_dp) * &
+            & (1.0_dp - exp(-dtau_a(k)/uarr(j))*exp(-dtau(k)/uarr(j))) * (lw_up_g(j,k+1) - nunj*be(k+1))
 
-          second = phin * (1.0_dp/((uarr(i))/uarr(j) + 1.0_dp) * &
-            & (1.0_dp - exp(-dtau_a(k)/uarr(i))*exp(-dtau_a(k)/uarr(j)))*(lw_up_g(j,k+1) - nunj*be(k+1)) + &
-            & nunj*nupi*(be(k+1) - be(k)*exp(-dtau_a(k)/uarr(i))))
+          second = phip/(eps(k)*uarr(i)/uarr(j) - 1.0_dp) * &
+            & (exp(-dtau(k)/uarr(i)) - exp(-dtau_a(k)/uarr(j))) * (lw_down_g(j,k) - nupj*be(k))
 
+          third = 1.0_dp/(Bln(k)*-(uarr(i)) - 1.0_dp) * &
+            & (nunj*phin + nupj*phip) * (be(k)*exp(-dtau(k)/uarr(i)) - be(k+1))
 
-          Sm(i,k) = Sm(i,k) +  (first + second)
+          Sm(i,k) = Sm(i,k) +  (first + second + third) * w(j)
 
-          !print*, k, i,j, Sm(i,k), first, second
+          !print*, first, second, third, Sm(i,k)
+
+          print*, Sp(i,k), Sm(i,k)
 
         end do
-
-        !Sp(i,k) = Sp(i,k) * w(i)
-        !Sm(i,k) = Sm(i,k) * w(i)
-
-        !print*, Sp(:,k), Sm(:,k)
       end do
-        Sp(:,k) = -Sp(:,k)/eps(k)
-        Sm(:,k) = -Sm(:,k)/eps(k)
     end do
 
-    !stop
+    stop
 
     ! Zero the total flux arrays
     lw_up(:) = 0.0_dp
@@ -301,8 +278,12 @@ contains
       ! Top boundary condition - 0 flux downward from top boundary
       lw_down_g(m,1) = 0.0_dp
       do k = 1, nlay
+
+        !! Efficency variables
+        T(m,k) = exp(-dtau(k)/uarr(m))
+
         lw_down_g(m,k+1) = lw_down_g(m,k)*T(m,k) + &
-          & nup(m,k) * (be(k+1) - be(k)*T(m,k)) + w0(k)*Sm(m,k)
+          & nup(m,k) * (be(k+1) - be(k)*T(m,k)) + w0(k)/2.0_dp*Sm(m,k)
           !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
       end do
 
@@ -319,7 +300,7 @@ contains
       do k = nlay, 1, -1
         !const = -w0(k)/(2.0_dp*eps(k))*(1.0_dp - 3.0_dp*hg(k)*uarr(m)**2)
         lw_up_g(m,k) = lw_up_g(m,k+1)*T(m,k) + &
-          & nun(m,k) * (be(k) - be(k+1)*T(m,k)) + w0(k)*Sp(m,k)
+          & nun(m,k) * (be(k) - be(k+1)*T(m,k)) + w0(k)/2.0_dp*Sp(m,k)
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
@@ -501,4 +482,4 @@ contains
 
   end subroutine bezier_interp
 
-end module ts_AA_E_mod
+end module ts_PT_mod

@@ -32,11 +32,10 @@ LFLAGS    = $(FFLAGS)
 
 
 OBJECTS = \
-	  toms715.o \
+		toms715.o \
 	  k_Rosseland_mod.o \
 	  IC_mod.o \
 	  dry_conv_adj_mod.o \
-	  call_twostr.o \
 	  ts_isothermal_mod.o \
 	  ts_isothermal_2_mod.o \
 	  ts_Toon_mod.o \
@@ -44,20 +43,26 @@ OBJECTS = \
 	  ts_Heng_mod.o \
 	  ts_short_char_mod_linear.o \
 		ts_short_char_mod_Bezier.o \
-    ts_AA_E_mod_test.o \
+    ts_AA_E_mod.o \
 		ts_AA_L_mod.o \
+		ts_PT_mod.o \
 		ts_VIM_mod.o \
     ts_Lewis_scatter_mod.o \
-	  ts_disort_scatter_mod.o \
     FMS_RC.o
 
 #		ts_Heng_ITS_mod.o \
-
+#    RDI1MACH.o \
+#		LAPACK.o \
+#    LINPAK.o \
+#		ERRPACK.o \
+#		DISOBRDF.o \
+#		BDREF.o \
+#		DISORT.o \
 
 # executable statement
 EXECS  = FMS_RC
 
-.SUFFIXES: .o .f90 .F
+.SUFFIXES: .o .f90 .F .f
 
 default: FMS_RC
 
@@ -72,3 +77,7 @@ clean:
 
 .F.o:
 	$(F90) $(FFLAGS) $(DEFS) -c $<
+
+.f.o:
+	$(F90) $(FFLAGS) $(DEFS) -c $<
+

@@ -1,9 +1,10 @@
 !!!
 ! Elspeth KH Lee - Aug 2023 : Initial version
 ! sw: Adding layer method with scattering
-! lw: 
-!     Pros: 
-!     Cons:
+! lw: Variational Iteration Method - Follows Zhang et al. (2017)
+!     Uses AA as an intial guess, then applies VIM to calculate the scattering component
+! Pros: Very fast method with LW scattering approximation, no matrix inversions - better than AA alone
+! Cons: Still an approximation (though quite good for a non-matrix method)
 !!!
 
 module ts_VIM_mod
@@ -20,7 +21,7 @@ module ts_VIM_mod
 
   !! Legendre quadrature for 1 nodes
   ! integer, parameter :: nmu = 1
-  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.66_dp/)
+  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/)
   ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
   ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
@@ -129,7 +130,7 @@ contains
     !! Work variables and arrays
     integer :: k, i, j
     real(dp), dimension(nlay) :: w0, hg
-    real(dp), dimension(nlay) :: dtau, beta, eps, dtau_a
+    real(dp), dimension(nlay) :: dtau, beta, epsg, eps, dtau_eg, dtau_e
     real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
     real(dp), dimension(nmu, nlay) :: T
     real(dp), dimension(nmu, nmu, nlay) :: Sp, Sm
@@ -158,11 +159,12 @@ contains
     end do
 
     !! modified co-albedo epsilon
-    eps(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
-    !eps(:) = (1.0_dp - w0(:))
+    epsg(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
+    eps(:) = 1.0_dp - w0(:)
 
     !! Absorption/modified optical depth for transmission function
-    dtau_a(:) = eps(:)*dtau(:)
+    dtau_eg(:) = epsg(:)*dtau(:)
+    dtau_e(:) = eps(:)*dtau(:)
 
     ! Zero the total flux arrays
     lw_up(:) = 0.0_dp
@@ -178,12 +180,11 @@ contains
       do k = 1, nlay
 
         !! Efficency variables
-        T(i,k) = exp(-dtau_a(k)/uarr(i)) ! Transmission function
+        T(i,k) = exp(-dtau_eg(k)/uarr(i)) ! Transmission function
 
         !! Downward AA sweep
         lw_down_g(i,k+1) = lw_down_g(i,k)*T(i,k) + &
-          & eps(k)/(uarr(i)*beta(k) - eps(k)) * (be(k)*T(i,k) - be(k+1))
-          !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
+          & epsg(k)/(uarr(i)*beta(k) - epsg(k)) * (be(k)*T(i,k) - be(k+1))
       end do
 
       !! Perform upward loop
@@ -199,24 +200,13 @@ contains
       do k = nlay, 1, -1
         !! Upward AA sweep
         lw_up_g(i,k) = lw_up_g(i,k+1)*T(i,k) + &
-          & eps(k)/(uarr(i)*beta(k) + eps(k)) * (be(k) - be(k+1)*T(i,k))
+          & epsg(k)/(uarr(i)*beta(k) + epsg(k)) * (be(k) - be(k+1)*T(i,k))
       end do
-
-      ! !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      ! lw_down(:) = lw_down(:) + lw_down_g(m,:) * wuarr(m)
-      ! lw_up(:) = lw_up(:) + lw_up_g(m,:) * wuarr(m)
 
     end do
 
-    !! The flux is the integrated intensity * 2pi
-    ! lw_down(:) = twopi * lw_down(:)
-    ! lw_up(:) = twopi * lw_up(:)
-    ! return
-
     !! Find Sp and Sm - it's now best to put mu into the inner loop
     ! Sp and Sm defined at lower level edges, zero upper boundary condition
-    !Sp(:,:) = 0.0_dp
-    !Sm(:,:) = 0.0_dp
     do k = 1, nlay
       if (w0(k) <= 1.0e-6_dp) then
          Sp(:,:,k) = 0.0_dp
@@ -228,9 +218,6 @@ contains
         !! Efficency variables
         T(i,k) = exp(-dtau(k)/uarr(i)) ! Transmission function for i
 
-        !Sp(i,:,k) = 0.0_dp
-        !Sm(i,:,k) = 0.0_dp
-
         do j = 1, nmu
 
           phip = 1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j)
@@ -238,51 +225,38 @@ contains
 
           !! Note, possible negative sign mistake in Zhang et al. (2017) - zepm and zepp must be positive quantities
           !! To get back the correct expression for the two-stream version
-          zepp = -(uarr(i)*uarr(j))/(uarr(i)*(1.0_dp - w0(k)) - uarr(j))
-          zemp = (-(uarr(i))*uarr(j))/(-(uarr(i))*(1.0_dp - w0(k)) - uarr(j))
-          zepm = -(uarr(i)*-(uarr(j)))/(uarr(i)*(1.0_dp - w0(k)) + uarr(j))
-          zemm = (uarr(i)*uarr(j))/(-(uarr(i))*(1.0_dp - w0(k)) + uarr(j))
+          zepp = -(uarr(i)*uarr(j))/(uarr(i)*eps(k) - uarr(j))
+          zemp = (-(uarr(i))*uarr(j))/(-(uarr(i))*eps(k) - uarr(j))
+          zepm = -(uarr(i)*-(uarr(j)))/(uarr(i)*eps(k) + uarr(j))
+          zemm = (uarr(i)*uarr(j))/(-(uarr(i))*eps(k) + uarr(j))
 
-          cp = (1.0_dp - w0(k))/(uarr(j)*beta(k) + 1.0_dp - w0(k))
-          cm = (1.0_dp - w0(k))/(-(uarr(j))*beta(k) + 1.0_dp - w0(k))
+          cp = eps(k)/(uarr(j)*beta(k) + eps(k))
+          cm = eps(k)/(-(uarr(j))*beta(k) + eps(k))
 
           first = phip * zepm * (lw_down_g(j,k) - be(k)*cm) * &
             & (1.0_dp - exp(-dtau(k)/zepm))
           second = phim * zepp * (lw_up_g(j,k+1) - be(k+1)*cp) * &
-            & (exp(-(1.0_dp - w0(k))*dtau(k)/uarr(j)) - T(i,k))
+            & (exp(-dtau_e(k)/uarr(j)) - T(i,k))
 
           Sp(i,j,k) = first + second
-
-          ! print*, k, i, j
-          ! print*, first, second
-          ! print*, zepm, uarr(j)/(2.0_dp - w0(k))
-          ! print*, zepp, uarr(j)/w0(k)
 
           first = phip * zemp * (lw_up_g(j,k+1) - be(k+1)*cp) * &
             & (1.0_dp - exp(-dtau(k)/zemp))
           second = phim * zemm * (lw_down_g(j,k) - be(k)*cm) * &
-            & (exp(-(1.0_dp - w0(k))*dtau(k)/uarr(j)) - T(i,k))
+            & (exp(-dtau_e(k)/uarr(j)) - T(i,k))
 
           Sm(i,j,k) = first + second
-
-          ! print*, k, i, j
-          ! print*, zepp, zemp, zepm, zemm
-          ! print*, zemp, uarr(j)/(2.0_dp - w0(k))
-          ! print*, zemm, uarr(j)/w0(k)
-
-          !print*, k,i,j,Sp(i,j,k)
 
         end do
       end do
     end do
 
-    !stop
-
     ! Zero the total flux arrays
     lw_up(:) = 0.0_dp
     lw_down(:) = 0.0_dp
 
-    !! Do final two sweeps including scattering source function
+    !! Do final two sweeps including scattering source function - 
+    !! Note, don't use AA here, just regular transmission function
     do i = 1, nmu
 
       !! Begin two-stream loops
@@ -292,9 +266,9 @@ contains
       do k = 1, nlay
 
         !! Efficency variables
-        T(i,k) = exp(-dtau(k)/uarr(i)) ! Transmission function
+        T(i,k) = exp(-dtau(k)/uarr(i)) ! Regular Transmission function
 
-        dm = (1.0_dp - w0(k))/(-(uarr(i))*beta(k) + 1.0_dp)
+        dm = eps(k)/(-(uarr(i))*beta(k) + 1.0_dp)
 
         lw_down_g(i,k+1) = lw_down_g(i,k)*T(i,k) + &
           & dm*(be(k+1) - be(k)*T(i,k))
@@ -309,18 +283,16 @@ contains
           phip = 1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j)
           phim = 1.0_dp + 3.0_dp*hg(k)*-(uarr(i))*uarr(j)
 
-          cp = (1.0_dp - w0(k))/(uarr(j)*beta(k) + 1.0_dp - w0(k))
-          cm = (1.0_dp - w0(k))/(-(uarr(j))*beta(k) + 1.0_dp - w0(k))
+          cp = eps(k)/(uarr(j)*beta(k) + eps(k))
+          cm = eps(k)/(-(uarr(j))*beta(k) + eps(k))
 
           third = third + &
             & (Sm(i,j,k) - bm*(cp*phim + cm*phip)*(be(k+1) - be(k)*T(i,k)))
-          !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
 
         end do
 
-        !print*, k,third
-
         lw_down_g(i,k+1) = lw_down_g(i,k+1) - w0(k)/(real(nmu*2,dp)*(-uarr(i)))*third
+
       end do
 
       !! Perform upward loop
@@ -336,7 +308,7 @@ contains
 
       do k = nlay, 1, -1
 
-        dpp = (1.0_dp - w0(k))/(uarr(i)*beta(k) + 1.0_dp)
+        dpp = eps(k)/(uarr(i)*beta(k) + 1.0_dp)
 
         lw_up_g(i,k) = lw_up_g(i,k+1)*T(i,k) - &
           & dpp*(be(k+1)*T(i,k) - be(k))
@@ -350,16 +322,13 @@ contains
           phip = 1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j)
           phim = 1.0_dp + 3.0_dp*hg(k)*-(uarr(i))*uarr(j)
 
-          cp = (1.0_dp - w0(k))/(uarr(j)*beta(k) + 1.0_dp - w0(k))
-          cm = (1.0_dp - w0(k))/(-(uarr(j))*beta(k) + 1.0_dp - w0(k))
+          cp = eps(k)/(uarr(j)*beta(k) + eps(k))
+          cm = eps(k)/(-(uarr(j))*beta(k) + 1.0_dp - w0(k))
 
           third = third + &
             & (Sp(i,j,k) - bp*(cp*phip + cm*phim)*(be(k+1)*T(i,k) - be(k)))
-          !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
 
         end do
-
-        !print*, k, third
 
         lw_up_g(i,k) = lw_up_g(i,k) + w0(k)/(real(nmu*2,dp)*(uarr(i)))*third
 
