@@ -131,6 +131,7 @@ contains
     real(dp), dimension(nlay) :: w0, hg
     real(dp), dimension(nlay) :: dtau, beta, eps, dtau_a
     real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
+    real(dp), dimension(nmu, nlay) :: T
     real(dp), dimension(nmu, nmu, nlay) :: Sp, Sm
 
     real(dp) :: phip, phim, cp, cm, bp, bm, dpp, dm, zepp, zemm, zepm, zemp
@@ -177,10 +178,11 @@ contains
       do k = 1, nlay
 
         !! Efficency variables
+        T(i,k) = exp(-dtau_a(k)/uarr(i)) ! Transmission function
 
         !! Downward AA sweep
-        lw_down_g(i,k+1) = lw_down_g(i,k)*exp(-dtau_a(k)/uarr(i)) + &
-          & (1.0_dp - w0(k))/(uarr(i)*beta(k) - 1.0_dp + w0(k)) * (be(k)*exp(-dtau_a(k)/uarr(i)) - be(k+1))
+        lw_down_g(i,k+1) = lw_down_g(i,k)*T(i,k) + &
+          & eps(k)/(uarr(i)*beta(k) - eps(k)) * (be(k)*T(i,k) - be(k+1))
           !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
       end do
 
@@ -196,8 +198,8 @@ contains
       end if
       do k = nlay, 1, -1
         !! Upward AA sweep
-        lw_up_g(i,k) = lw_up_g(i,k+1)*exp(-dtau_a(k)/uarr(i)) + &
-          & (1.0_dp - w0(k))/(uarr(i)*beta(k) + 1.0_dp - w0(k)) * (be(k) - be(k+1)*exp(-dtau_a(k)/uarr(i)))
+        lw_up_g(i,k) = lw_up_g(i,k+1)*T(i,k) + &
+          & eps(k)/(uarr(i)*beta(k) + eps(k)) * (be(k) - be(k+1)*T(i,k))
       end do
 
       ! !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
@@ -223,6 +225,9 @@ contains
       end if
       do i = 1, nmu
 
+        !! Efficency variables
+        T(i,k) = exp(-dtau(k)/uarr(i)) ! Transmission function for i
+
         !Sp(i,:,k) = 0.0_dp
         !Sm(i,:,k) = 0.0_dp
 
@@ -231,7 +236,8 @@ contains
           phip = 1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j)
           phim = 1.0_dp + 3.0_dp*hg(k)*-(uarr(i))*uarr(j)
 
-          !! Note, negative sign mistake in Zhang et al. (2017) - zepm and zepp must be positive quantities
+          !! Note, possible negative sign mistake in Zhang et al. (2017) - zepm and zepp must be positive quantities
+          !! To get back the correct expression for the two-stream version
           zepp = -(uarr(i)*uarr(j))/(uarr(i)*(1.0_dp - w0(k)) - uarr(j))
           zemp = (-(uarr(i))*uarr(j))/(-(uarr(i))*(1.0_dp - w0(k)) - uarr(j))
           zepm = -(uarr(i)*-(uarr(j)))/(uarr(i)*(1.0_dp - w0(k)) + uarr(j))
@@ -243,7 +249,7 @@ contains
           first = phip * zepm * (lw_down_g(j,k) - be(k)*cm) * &
             & (1.0_dp - exp(-dtau(k)/zepm))
           second = phim * zepp * (lw_up_g(j,k+1) - be(k+1)*cp) * &
-            & (exp(-(1.0_dp - w0(k))*dtau(k)/uarr(j)) - exp(-dtau(k)/uarr(i)))
+            & (exp(-(1.0_dp - w0(k))*dtau(k)/uarr(j)) - T(i,k))
 
           Sp(i,j,k) = first + second
 
@@ -255,7 +261,7 @@ contains
           first = phip * zemp * (lw_up_g(j,k+1) - be(k+1)*cp) * &
             & (1.0_dp - exp(-dtau(k)/zemp))
           second = phim * zemm * (lw_down_g(j,k) - be(k)*cm) * &
-            & (exp(-(1.0_dp - w0(k))*dtau(k)/uarr(j)) - exp(-dtau(k)/uarr(i)))
+            & (exp(-(1.0_dp - w0(k))*dtau(k)/uarr(j)) - T(i,k))
 
           Sm(i,j,k) = first + second
 
@@ -285,10 +291,13 @@ contains
       lw_down_g(i,1) = 0.0_dp
       do k = 1, nlay
 
+        !! Efficency variables
+        T(i,k) = exp(-dtau(k)/uarr(i)) ! Transmission function
+
         dm = (1.0_dp - w0(k))/(-(uarr(i))*beta(k) + 1.0_dp)
 
-        lw_down_g(i,k+1) = lw_down_g(i,k)*exp(-dtau(k)/uarr(i)) + &
-          & dm*(be(k+1) - be(k)*exp(-dtau(k)/uarr(i)))
+        lw_down_g(i,k+1) = lw_down_g(i,k)*T(i,k) + &
+          & dm*(be(k+1) - be(k)*T(i,k))
 
 
         bp = uarr(i)/(uarr(i)*beta(k) + 1.0_dp)  
@@ -304,7 +313,7 @@ contains
           cm = (1.0_dp - w0(k))/(-(uarr(j))*beta(k) + 1.0_dp - w0(k))
 
           third = third + &
-            & (Sm(i,j,k) - bm*(cp*phim + cm*phip)*(be(k+1) - be(k)*exp(-dtau(k)/uarr(i))))
+            & (Sm(i,j,k) - bm*(cp*phim + cm*phip)*(be(k+1) - be(k)*T(i,k)))
           !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
 
         end do
@@ -329,8 +338,8 @@ contains
 
         dpp = (1.0_dp - w0(k))/(uarr(i)*beta(k) + 1.0_dp)
 
-        lw_up_g(i,k) = lw_up_g(i,k+1)*exp(-dtau(k)/uarr(i)) - &
-          & dpp*(be(k+1)*exp(-dtau(k)/uarr(i)) - be(k))
+        lw_up_g(i,k) = lw_up_g(i,k+1)*T(i,k) - &
+          & dpp*(be(k+1)*T(i,k) - be(k))
 
 
         bp = uarr(i)/(uarr(i)*beta(k) + 1.0_dp)  
@@ -345,7 +354,7 @@ contains
           cm = (1.0_dp - w0(k))/(-(uarr(j))*beta(k) + 1.0_dp - w0(k))
 
           third = third + &
-            & (Sp(i,j,k) - bp*(cp*phip + cm*phim)*(be(k+1)*exp(-dtau(k)/uarr(i)) - be(k)))
+            & (Sp(i,j,k) - bp*(cp*phip + cm*phim)*(be(k+1)*T(i,k) - be(k)))
           !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
 
         end do
