@@ -253,6 +253,16 @@ contains
           
           ! print*, first, second, Sp(i,k)
 
+          if (j == i) then
+            B_eps = dtau_a(k)/uarr(i)
+            phip = 1.0_dp - (1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
+            phin = 1.0_dp - (1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
+          else
+            B_eps = 1.0_dp/(uarr(i)/uarr(j) - 1.0_dp) * (exp(-dtau_a(k)/uarr(i)) - exp(-dtau_a(k)/uarr(j)))
+            phip = 0.0_dp - (1.0_dp + 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
+            phin = 0.0_dp - (1.0_dp - 3.0_dp*hg(k)*uarr(i)*uarr(j))/2.0_dp
+          end if
+
           !! Now Sm negative direction
           first = phip * (B_eps*(lw_down_g(j,k) - nupj*be(k)) + &
             & nupj*nupi*(be(k+1) - be(k)*exp(-dtau_a(k)/uarr(i))))
@@ -268,8 +278,8 @@ contains
 
         end do
 
-        Sp(i,k) = Sp(i,k) * w(i)
-        Sm(i,k) = Sm(i,k) * w(i)
+        !Sp(i,k) = Sp(i,k) * w(i)
+        !Sm(i,k) = Sm(i,k) * w(i)
 
         !print*, Sp(:,k), Sm(:,k)
       end do

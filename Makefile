@@ -44,8 +44,9 @@ OBJECTS = \
 	  ts_Heng_mod.o \
 	  ts_short_char_mod_linear.o \
 		ts_short_char_mod_Bezier.o \
-    ts_AA_E_mod.o \
+    ts_AA_E_mod_test.o \
 		ts_AA_L_mod.o \
+		ts_VIM_mod.o \
     ts_Lewis_scatter_mod.o \
 	  ts_disort_scatter_mod.o \
     FMS_RC.o

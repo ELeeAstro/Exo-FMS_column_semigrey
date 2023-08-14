@@ -22,6 +22,7 @@ program Exo_FMS_RC
   use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
   use ts_AA_E_mod, only : ts_AA_E
   use ts_AA_L_mod, only : ts_AA_L
+  use ts_VIM_mod, only : ts_VIM
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
   use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
@@ -313,6 +314,9 @@ program Exo_FMS_RC
       ! Absorption Approximation (linear Planck function) with analytical LW scattering
       call ts_AA_L(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
       & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)           
+    case('VIM')
+      call ts_VIM(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs) 
     case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)
