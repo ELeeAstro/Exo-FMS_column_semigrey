@@ -54,7 +54,7 @@ contains
 
     !! Work variables
     integer :: i
-    real(dp) :: Finc, be_int, start, end
+    real(dp) :: Finc, be_int
     real(dp), dimension(nlev) :: Te, be
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
@@ -138,7 +138,7 @@ contains
     real(dp), dimension(nmu, nmu, nlay) :: phip, phim
 
     real(dp) :: bp, bm, dpp, dm, zepp, zemm, zepm, zemp
-    real(dp) :: first, second, third
+    real(dp) :: first, second
 
     
     !! Calculate dtau in each layer
@@ -185,10 +185,16 @@ contains
       end do
 
       !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here the lw_a_surf is assumed to be = 1 as per the definition
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(i,nlev) = lw_down_g(i,nlev)*lw_a_surf + (1.0_dp - lw_a_surf)*be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+      end if
+
       do k = nlay, 1, -1
         !! Upward AA sweep
         lw_up_g(i,k) = lw_up_g(i,k+1)*T_eg(i,k) + &
@@ -199,7 +205,7 @@ contains
 
     !! If no scattering component in profile, then just find flux and return
     !! no need to perform any scattering calculations
-    if (all(w0(:) <= 1.0e-6_dp)) then
+    if (all(w0(:) <= 1.0e-3_dp)) then
 
       ! Zero the total flux arrays
       lw_up(:) = 0.0_dp
@@ -326,10 +332,15 @@ contains
       end do
 
       !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here the lw_a_surf is assumed to be = 1 as per the definition
-      ! here we use the same condition but use intensity units to be consistent
-      lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+      if (surf .eqv. .True.) then
+        ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
+        lw_up_g(i,nlev) = lw_down_g(i,nlev)*lw_a_surf + (1.0_dp - lw_a_surf)*be_int
+      else
+        ! Lower boundary condition - internal heat definition Fint = F_down - F_up
+        ! here the lw_a_surf is assumed to be = 1 as per the definition
+        ! here we use the same condition but use intensity units to be consistent
+        lw_up_g(i,nlev) = lw_down_g(i,nlev) + be_int
+      end if
 
       do k = nlay, 1, -1
 
@@ -367,7 +378,7 @@ contains
     !! Work variables
     integer :: k
     real(dp) :: lamtau, e_lamtau, arg, apg, amg
-    real(dp), dimension(nlev) ::  w, g, f
+    real(dp), dimension(nlev) :: om, g, f
     real(dp), dimension(nlev) :: tau_Ve_s
     real(dp), dimension(nlay) :: tau
     real(dp), dimension(nlev) :: tau_s, w_s, g_s
@@ -377,14 +388,14 @@ contains
     real(dp), dimension(nlev) :: cum_trans
 
     ! Design w and g to include surface property level
-    w(1:nlay) = w_in(:)
+    om(1:nlay) = w_in(:)
     g(1:nlay) = g_in(:)
 
-    w(nlev) = 0.0_dp
+    om(nlev) = 0.0_dp
     g(nlev) = 0.0_dp
 
     ! If zero albedo across all atmospheric layers then return direct beam only
-    if (all(w(:) <= 1.0e-3_dp)) then
+    if (all(om(:) <= 1.0e-3_dp)) then
 
       if (mu_z(nlev) == mu_z(1)) then
         ! No zenith correction, use regular method
@@ -407,7 +418,7 @@ contains
 
     end if
 
-    w(nlev) = w_surf
+    om(nlev) = w_surf
     g(nlev) = 0.0_dp
 
     ! Backscattering approximation
@@ -423,7 +434,7 @@ contains
 
     do k = 1, nlev
 
-      w_s(k) = w(k) * ((1.0_dp - f(k))/(1.0_dp - w(k)*f(k)))
+      w_s(k) = om(k) * ((1.0_dp - f(k))/(1.0_dp - om(k)*f(k)))
       g_s(k) = (g(k) - f(k))/(1.0_dp - f(k))
       lam(k) = sqrt(3.0_dp*(1.0_dp - w_s(k))*(1.0_dp - w_s(k)*g_s(k)))
       gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z(k)**2)/(1.0_dp - lam(k)**2*mu_z(k)**2)

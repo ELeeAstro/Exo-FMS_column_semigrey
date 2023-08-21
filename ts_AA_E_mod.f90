@@ -54,7 +54,7 @@ contains
 
     !! Work variables
     integer :: i
-    real(dp) :: Finc, be_int, start, end
+    real(dp) :: Finc, be_int
     real(dp), dimension(nlev) :: Te, be
     real(dp), dimension(nlev) :: sw_down, sw_up, lw_down, lw_up
     real(dp), dimension(nlev) :: lw_net, sw_net
@@ -129,7 +129,7 @@ contains
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
 
     !! Work variables and arrays
-    integer :: k, m, n
+    integer :: k, m
     real(dp), dimension(nlay) :: w0, hg
     real(dp), dimension(nlay) :: dtau, Bln, eps, dtau_a
     real(dp), dimension(nmu, nlay) :: T, nup, nun
@@ -195,6 +195,7 @@ contains
         ! here we use the same condition but use intensity units to be consistent
         lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
       end if
+
       do k = nlay, 1, -1
         lw_up_g(m,k) = lw_up_g(m,k+1)*T(m,k) + &
           & nun(m,k) * (be(k) - be(k+1)*T(m,k))
@@ -228,7 +229,7 @@ contains
     !! Work variables
     integer :: k
     real(dp) :: lamtau, e_lamtau, arg, apg, amg
-    real(dp), dimension(nlev) ::  w, g, f
+    real(dp), dimension(nlev) ::  om, g, f
     real(dp), dimension(nlev) :: tau_Ve_s
     real(dp), dimension(nlay) :: tau
     real(dp), dimension(nlev) :: tau_s, w_s, g_s
@@ -237,21 +238,21 @@ contains
     real(dp), dimension(nlev) :: Tf
 
     ! Design w and g to include surface property level
-    w(1:nlay) = w_in(:)
+    om(1:nlay) = w_in(:)
     g(1:nlay) = g_in(:)
 
-    w(nlev) = 0.0_dp
+    om(nlev) = 0.0_dp
     g(nlev) = 0.0_dp
 
     ! If zero albedo across all atmospheric layers then return direct beam only
-    if (all(w(:) <= 1.0e-12_dp)) then
+    if (all(om(:) <= 1.0e-12_dp)) then
       sw_down(:) = Finc * mu_z * exp(-tau_Ve(:)/mu_z)
       sw_down(nlev) = sw_down(nlev) * (1.0_dp - w_surf) ! The surface flux for surface heating is the amount of flux absorbed by surface
       sw_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
       return
     end if
 
-    w(nlev) = w_surf
+    om(nlev) = w_surf
     g(nlev) = 0.0_dp
 
     ! Backscattering approximation
@@ -267,7 +268,7 @@ contains
 
     do k = 1, nlev
 
-      w_s(k) = w(k) * ((1.0_dp - f(k))/(1.0_dp - w(k)*f(k)))
+      w_s(k) = om(k) * ((1.0_dp - f(k))/(1.0_dp - om(k)*f(k)))
       g_s(k) = (g(k) - f(k))/(1.0_dp - f(k))
       lam(k) = sqrt(3.0_dp*(1.0_dp - w_s(k))*(1.0_dp - w_s(k)*g_s(k)))
       gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z**2)/(1.0_dp - lam(k)**2*mu_z**2)

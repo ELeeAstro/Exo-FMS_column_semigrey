@@ -89,7 +89,7 @@ mu_z - cosine angle of the solar zenith angle \
 Tirr - Irradiation temperature \
 Tint - Internal temperature
 
-Bezier - use Bezier interpolation for Temperature levels (.True.)
+Bezier - use Bezier interpolation for temperature levels (.True.)
 
 k_V - visible band opacity (m2 kg-1) \
 k_IR - IR band opacity (m2 kg-1) \

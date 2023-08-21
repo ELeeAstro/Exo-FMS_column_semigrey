@@ -84,7 +84,7 @@ contains
 
     !! Work variables
     integer :: i
-    real(dp) :: Finc, be_int, start, end
+    real(dp) :: Finc, be_int
     real(dp), dimension(nlev) :: Te, be
     real(dp), dimension(nlev) :: lpe
     real(dp), dimension(nlay) :: lTl, lpl
