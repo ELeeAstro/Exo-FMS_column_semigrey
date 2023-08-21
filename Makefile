@@ -36,6 +36,7 @@ OBJECTS = \
 	  k_Rosseland_mod.o \
 	  IC_mod.o \
 	  dry_conv_adj_mod.o \
+		call_twostr.o \
 	  ts_isothermal_mod.o \
 	  ts_isothermal_2_mod.o \
 	  ts_Toon_mod.o \
@@ -48,6 +49,7 @@ OBJECTS = \
 		ts_PT_mod.o \
 		ts_VIM_mod.o \
     ts_Lewis_scatter_mod.o \
+		ts_disort_scatter_mod.o \
     FMS_RC.o
 
 #		ts_Heng_ITS_mod.o \

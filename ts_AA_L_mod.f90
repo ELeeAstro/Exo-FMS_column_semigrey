@@ -30,9 +30,8 @@ module ts_AA_L_mod
   real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
   real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
-
   public :: ts_AA_L
-  private :: lw_grey_updown, sw_grey_updown_adding, linear_log_interp, bezier_interp
+  private :: lw_AA_L, sw_adding, linear_log_interp, bezier_interp
 
 contains
 
@@ -83,7 +82,7 @@ contains
     !! Shortwave flux calculation
     if (mu_z > 0.0_dp) then
       Finc = (1.0_dp - AB) * F0
-      call sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve(:), mu_z, sw_a, sw_g, sw_a_surf, sw_down(:), sw_up(:))
+      call sw_adding(nlay, nlev, Finc, tau_Ve(:), mu_z, sw_a, sw_g, sw_a_surf, sw_down(:), sw_up(:))
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -96,7 +95,7 @@ contains
     else
       be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
     end if
-    call lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe(:), lw_a, lw_g, lw_a_surf, lw_up(:), lw_down(:))
+    call lw_AA_L(surf, nlay, nlev, be, be_int, tau_IRe(:), lw_a, lw_g, lw_a_surf, lw_up(:), lw_down(:))
 
     !! Net fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -115,7 +114,7 @@ contains
 
   end subroutine ts_AA_L
 
-  subroutine lw_grey_updown(surf, nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_a_surf, lw_up, lw_down)
+  subroutine lw_AA_L(surf, nlay, nlev, be, be_int, tau_IRe, ww, gg, lw_a_surf, lw_up, lw_down)
     implicit none
 
     !! Input variables
@@ -208,10 +207,10 @@ contains
     lw_down(:) = twopi * lw_down(:)
     lw_up(:) = twopi * lw_up(:)
 
-  end subroutine lw_grey_updown
+  end subroutine lw_AA_L
 
 
-  subroutine sw_grey_updown_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
+  subroutine sw_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
@@ -314,7 +313,7 @@ contains
     sw_down(:) = sw_down(:) * mu_z * Finc
     sw_up(:) = sw_up(:) * mu_z * Finc
 
-  end subroutine sw_grey_updown_adding
+  end subroutine sw_adding
 
   ! Perform linear interpolation in log10 space
   subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)
@@ -341,7 +340,7 @@ contains
     real(dp), intent(in) :: x
     real(dp), intent(out) :: y
 
-    real(dp) :: dx, dx1, dy, dy1, w, yc, t, wlim, wlim1
+    real(dp) :: dx, dx1, dy, dy1, wh, yc, t, wlim, wlim1
 
     !xc = (xi(1) + xi(2))/2.0_dp ! Control point (no needed here, implicitly included)
     dx = xi(2) - xi(1)
@@ -352,25 +351,25 @@ contains
     if (x > xi(1) .and. x < xi(2)) then
       ! left hand side interpolation
       !print*,'left'
-      w = dx1/(dx + dx1)
+      wh = dx1/(dx + dx1)
       wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) - dx/2.0_dp * (w*dy/dx + (1.0_dp - w)*dy1/dx1)
+      yc = yi(2) - dx/2.0_dp * (wh*dy/dx + (1.0_dp - wh)*dy1/dx1)
       t = (x - xi(1))/dx
       y = (1.0_dp - t)**2 * yi(1) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(2)
     else ! (x > xi(2) and x < xi(3)) then
       ! right hand side interpolation
       !print*,'right'
-      w = dx/(dx + dx1)
+      wh = dx/(dx + dx1)
       wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (w <= min(wlim,wlim1) .or. w >= max(wlim,wlim1)) then
-        w = 1.0_dp
+      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+        wh = 1.0_dp
       end if
-      yc = yi(2) + dx1/2.0_dp * (w*dy1/dx1 + (1.0_dp - w)*dy/dx)
+      yc = yi(2) + dx1/2.0_dp * (wh*dy1/dx1 + (1.0_dp - wh)*dy/dx)
       t = (x - xi(2))/(dx1)
       y = (1.0_dp - t)**2 * yi(2) + 2.0_dp*t*(1.0_dp - t)*yc + t**2*yi(3)
     end if
