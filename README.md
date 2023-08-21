@@ -4,6 +4,7 @@ Major Update History
  - May 2021 - initial models
  - Dec 2021 - major overhual
  - Jun 2022 - Improvements + Bezier short char.
+ - Aug 2023 - Added AA and VIM methods, cleanup
 
 Elspeth KH Lee - Dec 2021
 
@@ -31,6 +32,8 @@ This code performs various two-stream approaches from the literature in a semi-g
 5. Neil Lewis's scattering code, following Pierrehumbert (2010)
 6. Mendonca et al. method
 7. Two-stream DISORT version (w. modifications by Xianyu Tan)
+8. Absorption Approximation (AA), with exponential function (_E) or linear (_L)
+9. Variational Iteration Method (VIM)
 
 You can also see the header comments in the source code for some additional information.
 
@@ -56,7 +59,10 @@ ts_scheme: \
 'Heng' - Heng et al. method \
 'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
 'Mendonca' - Mendonca et al. method \
-'Disort_scatter' - two-stream DISORT version with scattering
+'Disort_scatter' - two-stream DISORT version with scattering \
+'AA_E' - Absorption Approximation with exoponential Planck function \ 
+'AA_L' - Absorption Approximation with linear Planck function \ 
+'VIM' - Variational Iteration Method 
 
 opac_scheme: \
 'Constant' - constant k_V and k_IR values \
@@ -124,13 +130,14 @@ You will need to clean and recompile the code if these are changed.
 
 # Personal recommendations
 
-For non-scattering problems, we generally recommend that the short characteristics method be used (linear or Bezier), as it is fast, efficient, very stable and also very accurate. This is currently what is used inside Exo-FMS for the Hot Jupiter simulations, and is even fast enough for high-resolution cases.
+For non-scattering problems, we generally recommend that the AA_E or AA_L method be used, as it is fast, efficient, very stable and also very accurate. 
 For shortwave scattering (and non-scattering) problems we recommend the adding method as included (or using the two-stream DISORT or Toon et al. with scattering), the adding method is generally fast and accurate (enough).
-For longwave scattering problems we recommend the two stream Toon et al. version with scattering, however, it may be unstable at combined very high g (e.g. 0.9+) and ssa (e.g. 0.9+).
-Otherwise, for longwave scattering we recommend the two-stream DISORT version, which is slower but more stable.
+For longwave scattering problems we recommend the VIM method for general use, as a fast and efficent method.
+If that fails we recommend the two-stream Toon or DISORT version, which are slower but may be more accurate in some circumstances.
 
 # Future developments
 
 We will include more codes that include IR multiple-scattering in the future. \
+Add more approximate sw scattering schemes \
 Additional opacity schemes from the literature can be added. \
 Window fractions and functions.
