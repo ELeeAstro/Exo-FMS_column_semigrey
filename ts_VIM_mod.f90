@@ -205,7 +205,7 @@ contains
 
     !! If no scattering component in profile, then just find flux and return
     !! no need to perform any scattering calculations
-    if (all(w0(:) <= 1.0e-3_dp)) then
+    if (all(w0(:) <= 1.0e-6_dp)) then
 
       ! Zero the total flux arrays
       lw_up(:) = 0.0_dp
@@ -247,7 +247,6 @@ contains
       if (w0(k) <= 1.0e-6_dp) then
         cycle
       end if
-
 
       !! Efficency variables
 
