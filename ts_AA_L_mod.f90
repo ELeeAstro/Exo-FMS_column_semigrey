@@ -1,6 +1,6 @@
 !!!
 ! Elspeth KH Lee - Aug 2023 : Initial version
-! sw: Adding layer method with scattering
+! sw: alpha-4SDA - 4 stream analytic spherical harmonic method with doubling adding method (Zhang & Li 2013)
 ! lw: Absorption Approximation following Li (2002) - This is the linear in tau method
 !     Pros: Very fast method with LW scattering approximation, no matrix inversions
 !     Cons: Not technically multiple scattering (can be quite innacurate at even moderate albedo)
@@ -30,8 +30,12 @@ module ts_AA_L_mod
   real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
   real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
+  !! Use Two-Term HG function for sw
+  logical, parameter :: TTHG = .False.
+
   public :: ts_AA_L
-  private :: lw_AA_L, sw_adding, linear_log_interp, bezier_interp
+  private :: lw_AA_L, sw_SDA, linear_log_interp, bezier_interp, &
+      & matinv4, ludcmp, lubksb, inv_LU
 
 contains
 
@@ -82,7 +86,7 @@ contains
     !! Shortwave flux calculation
     if (mu_z > 0.0_dp) then
       Finc = (1.0_dp - AB) * F0
-      call sw_adding(nlay, nlev, Finc, tau_Ve(:), mu_z, sw_a, sw_g, sw_a_surf, sw_down(:), sw_up(:))
+      call sw_SDA(nlay, nlev, Finc, tau_Ve(:), mu_z, sw_a, sw_g, sw_a_surf, sw_down(:), sw_up(:))
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -129,19 +133,37 @@ contains
 
     !! Work variables and arrays
     integer :: k, m
-    real(dp), dimension(nlay) :: w0, hg
+    real(dp), dimension(nlay) :: w0, hg, fc
     real(dp), dimension(nlay) :: dtau, Blin, eps,  dtau_a
     real(dp), dimension(nmu, nlay) :: T, zeta, const
     real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
 
-    
+    real(dp), dimension(nlay) :: sigma_sq, pmom2, c
+    integer, parameter :: nstr = nmu*2
+
     !! Calculate dtau in each layer
     dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
 
-    ! Delta eddington scaling
-    w0(:) = (1.0_dp - gg(:)**2)*ww(:)/(1.0_dp-ww(:)*gg(:)**2)
-    dtau(:) = (1.0_dp-ww(:)*gg(:)**2)*dtau(:)
-    hg(:) = gg(:)/(1.0_dp + gg(:))
+    !! Delta-M+ scaling (Following DISORT: Lin et al. 2018)
+    !! Assume HG phase function for scaling
+    fc(:) = gg(:)**(nstr)
+    pmom2(:) = gg(:)**(nstr+1)
+
+    where (fc(:) /=  pmom2(:))
+      sigma_sq(:) = real((nstr+1)**2 - nstr**2,dp) / &
+      & ( log(fc(:)**2/pmom2(:)**2) )
+      c(:) = exp(real(nstr**2,dp)/(2.0_dp*sigma_sq(:)))
+      fc(:) = c(:)*fc(:)
+
+      w0(:) = ww(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*ww(:)))
+      dtau(:) = (1.0_dp - ww(:)*fc(:))*dtau(:)
+
+    elsewhere
+      w0(:) = ww(:)
+      fc(:) = 0.0_dp
+    end where
+
+    hg(:) = gg(:)
 
     !! Log B with tau function
     do k = 1, nlay
@@ -209,111 +231,408 @@ contains
 
   end subroutine lw_AA_L
 
-
-  subroutine sw_adding(nlay, nlev, Finc, tau_Ve, mu_z, w_in, g_in, w_surf, sw_down, sw_up)
+ subroutine sw_SDA(nlay, nlev, Finc, tau_Ve, mu_z, ww, gg, w_surf, sw_down, sw_up)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
     real(dp), intent(in) :: Finc, mu_z, w_surf
     real(dp), dimension(nlev), intent(in) :: tau_Ve
-    real(dp), dimension(nlay), intent(in) :: w_in, g_in
+    real(dp), dimension(nlay), intent(in) :: ww, gg
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_down, sw_up
 
     !! Work variables
     integer :: k
-    real(dp) :: lamtau, e_lamtau, arg, apg, amg
-    real(dp), dimension(nlev) ::  om, g, f
-    real(dp), dimension(nlev) :: tau_Ve_s
-    real(dp), dimension(nlay) :: tau
-    real(dp), dimension(nlev) :: tau_s, w_s, g_s
-    real(dp), dimension(nlev) :: lam, u, N, gam, alp
-    real(dp), dimension(nlev) :: R_b, T_b, R, T
-    real(dp), dimension(nlev) :: Tf
+    real(dp), dimension(nlay) :: w0, dtau, hg
+    real(dp), dimension(nlev) :: tau, T
+    real(dp) :: mu1, mu2, mu3, f0
+    real(dp) :: om0, om1, om2, om3
+    real(dp) :: a0, a1, a2, a3, b0, b1, b2, b3
+    real(dp) :: e1, e2
+    real(dp) :: beta, gam, k1, k2, R1, R2, P1, P2, Q1, Q2
+    real(dp) :: eta0, eta1, eta2, eta3, del0, del1, del2, del3, delta
+    real(dp) :: z1p, z1m, z2p, z2m
+    real(dp) :: phi1p, phi1m, phi2p, phi2m
+    real(dp) :: Cphi1p, Cphi1m, Cphi2p, Cphi2m
 
-    ! Design w and g to include surface property level
-    om(1:nlay) = w_in(:)
-    g(1:nlay) = g_in(:)
+    real(dp), dimension(4) :: H1, H2, H3, H4
+    real(dp), dimension(4) :: AA12H1
+    real(dp), dimension(4,4) :: AA1, AA2, AA1_i, AA12
+    real(dp), dimension(4) :: Fdir, Fdiffa, Fdiffb
 
-    om(nlev) = 0.0_dp
-    g(nlev) = 0.0_dp
+    real(dp), dimension(nlay,2) :: Rdir, Tdir
+    real(dp), dimension(nlay,2,2) :: Rdiff, Tdiff 
 
-    ! If zero albedo across all atmospheric layers then return direct beam only
-    if (all(om(:) <= 1.0e-12_dp)) then
+    real(dp), dimension(nlev,2) :: T1k, R1k
+    real(dp), dimension(nlev,2,2) :: Rst1k, Rd1k
+
+    real(dp), dimension(nlay) :: fc, sigma_sq, pmom2, c
+    integer, parameter :: nstr = 4
+    real(dp), parameter :: eps_20 = 1.0e-20_dp
+
+    integer :: l, km1, lp1
+    real(dp)  :: c11, c12, c21, c22, pmod, t11, t12, t21, t22, b11, b12, &
+           &   b21, b22, uu1, uu2, du1, du2, a11, a12, a21, a22, r11, r12, r21, r22, d1, d2
+
+    real(dp), dimension(nlev) :: scumdtr, reflt, trant
+    real(dp), dimension(nlay) :: dtr
+
+    real(dp) :: hg2, alp
+
+    !! If zero albedo across all atmospheric layers then return direct beam only
+    if (all(ww(:) <= 1.0e-6_dp)) then
       sw_down(:) = Finc * mu_z * exp(-tau_Ve(:)/mu_z)
       sw_down(nlev) = sw_down(nlev) * (1.0_dp - w_surf) ! The surface flux for surface heating is the amount of flux absorbed by surface
       sw_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
       return
     end if
 
-    om(nlev) = w_surf
-    g(nlev) = 0.0_dp
+    !! Calculate dtau in each layer
+    dtau(:) = tau_Ve(2:) - tau_Ve(1:nlay)
 
-    ! Backscattering approximation
-    f(:) = g(:)**2
+    !! Delta-M+ scaling (Following DISORT: Lin et al. 2018)
+    !! Assume HG phase function for scaling
+    fc(:) = gg(:)**(nstr)
+    pmom2(:) = gg(:)**(nstr+1)
 
-    !! Do optical depth rescaling
-    tau_Ve_s(1) = tau_Ve(1)
+    where (fc(:) /=  pmom2(:))
+      sigma_sq(:) = real((nstr+1)**2 - nstr**2,dp) / &
+      & ( log(fc(:)**2/pmom2(:)**2) )
+      c(:) = exp(real(nstr**2,dp)/(2.0_dp*sigma_sq(:)))
+      fc(:) = c(:)*fc(:)
+
+      w0(:) = ww(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*ww(:)))
+      dtau(:) = (1.0_dp - ww(:)*fc(:))*dtau(:)
+
+    elsewhere
+      w0(:) = ww(:)
+      fc(:) = 0.0_dp
+    end where
+
+    hg(:) = gg(:)
+
+    !! Reform edge optical depths
+    tau(1) = tau_Ve(1)
     do k = 1, nlay
-      tau(k) = tau_Ve(k+1) - tau_Ve(k)
-      tau_s(k) = tau(k) * (1.0_dp - w(k)*f(k))
-      tau_Ve_s(k+1) = tau_Ve_s(k) + tau_s(k)
+      tau(k+1) = tau(k) + dtau(k)
+    end do
+
+    !! Start SDA calculation
+
+    !! First find the Reflection and Transmission coefficents (direct and diffuse) for each layer
+    do k = 1, nlay
+
+      !! Layer transmission
+      dtr(k) = exp(-dtau(k)/mu_z)
+
+      !! Mu moments
+      mu1 = mu_z
+      mu2 = mu_z**2
+      mu3 = mu_z**3
+
+      !! Inverse zenith angle
+      f0 = 1.0_dp/mu_z
+
+      !! Omega Legendre polynomial coefficents - scale with delta-M+
+      if (hg(k) /= 0.0_dp) then
+        if (TTHG .eqv. .False.) then
+          ! Use HG phase function
+          om0 = 1.0_dp
+          om1 = 3.0_dp * (hg(k) - fc(k))/(1.0_dp - fc(k))
+          om2 = 5.0_dp * (hg(k)**2 - fc(k))/(1.0_dp - fc(k))
+          om3 = 7.0_dp * (hg(k)**3 - fc(k))/(1.0_dp - fc(k))
+        else
+          ! Use TTHG phase function with default parameters
+          hg2 = hg(k)/2.0_dp
+          alp = 1.0_dp - hg2**2
+          om0 = 1.0_dp
+          om1 = 3.0_dp * ((alp*hg(k) + (1.0_dp - alp)*hg2) - fc(k))/(1.0_dp - fc(k))
+          om2 = 5.0_dp * ((alp*hg(k)**2 + (1.0_dp - alp)*hg2**2) - fc(k))/(1.0_dp - fc(k))
+          om3 = 7.0_dp * ((alp*hg(k)**3 + (1.0_dp - alp)*hg2**3) - fc(k))/(1.0_dp - fc(k))
+        end if
+      else
+        ! Use Rayleigh scattering phase function for isotropic scattering
+        om0 = 1.0_dp
+        om1 = 0.0_dp
+        om2 = 0.5_dp
+        om3 = 0.0_dp
+      end if
+
+      !! Find the a coefficents
+      a0 =  1.0_dp - w0(k)*om0 + eps_20
+      a1 =  3.0_dp - w0(k)*om1 + eps_20
+      a2 =  5.0_dp - w0(k)*om2 + eps_20
+      a3 =  7.0_dp - w0(k)*om3 + eps_20
+
+      !! Find the b coefficents
+      b0 = 0.25_dp * w0(k)*om0 * Finc/pi
+      b1 = 0.25_dp * w0(k)*om1 * -(mu1) * Finc/pi
+      b2 = 0.125_dp * w0(k)*om2 * (3.0_dp * mu2 - 1.0_dp) * Finc/pi
+      b3 = 0.125_dp * w0(k)*om3 * (5.0_dp * -mu3 - 3.0_dp*-(mu_z)) * Finc/pi
+
+      !! Find beta and gamma
+      beta = a0*a1 + (4.0_dp/9.0_dp)*a0*a3 + (1.0_dp/9.0_dp)*a2*a3
+      gam = (1.0_dp/9.0_dp)*a0*a1*a2*a3
+
+      !! Find k values - lambda in Rooney
+      k1 = (beta + sqrt((beta**2 - 4.0_dp*gam)))/2.0_dp
+      k2 = (beta - sqrt((beta**2 - 4.0_dp*gam)))/2.0_dp
+
+      k1 = sqrt(k1)
+      k2 = sqrt(k2)
+
+      !! Find e values
+      e1 = exp(-k1*dtau(k))
+      e2 = exp(-k2*dtau(k))      
+      
+      !! Find R, P and Q coefficents 
+      !! NOTE: Zhang et al. (2013) has the wrong coefficent definitions
+      !! Rooney et al. (2023) has the correct definitions and order in the matrix
+      !! So we we use the Rooney definitions, but keep the Zhang notation
+      Q1 = -3.0_dp/2.0_dp * (a0*a1/k1 - k1)/a3
+      Q2 = -3.0_dp/2.0_dp * (a0*a1/k2 - k2)/a3
+      R1 = -a0/k1
+      R2 = -a0/k2
+      P1 = 0.3125_dp * (a0*a1/k1**2 - 1.0_dp)
+      P2 = 0.3125_dp * (a0*a1/k2**2 - 1.0_dp)
+
+      !! Find the delta values
+      delta = 9.0_dp*(f0**4 - beta*f0**2 + gam)
+      del0 = (a1*b0 - b1*f0)*(a2*a3 - 9.0_dp*f0**2) + 2.0_dp*f0**2*(a3*b2 - 2.0_dp*a3*b0 - 3.0_dp*b3*f0)
+      del1 = (a0*b1 - b0*f0)*(a2*a3 - 9.0_dp*f0**2) - 2.0_dp*a0*f0*(a3*b2 - 3.0_dp*b3*f0)
+      del2 = (a3*b2 - 3.0_dp*b3*f0)*(a0*a1 - f0**2) - 2.0_dp*a3*f0*(a0*b1 - b0*f0)
+      del3 = (a2*b3 - 3.0_dp*b2*f0)*(a0*a1 - f0**2) + f0**2*(6.0_dp*a0*b1 - 4.0_dp*a0*b3 - 6.0_dp*b0*f0)
+
+      !! Find the eta values
+      eta0 = del0/delta
+      eta1 = del1/delta
+      eta2 = 0.625_dp * del2/delta
+      eta3 = del3/delta
+
+      !! Find the phi values
+      phi1p = 2.0_dp*pi*(0.5_dp + R1 + 5.0_dp/8.0_dp*P1)
+      phi1m = 2.0_dp*pi*(0.5_dp - R1 + 5.0_dp/8.0_dp*P1)
+      phi2p = 2.0_dp*pi*(0.5_dp + R2 + 5.0_dp/8.0_dp*P2)
+      phi2m = 2.0_dp*pi*(0.5_dp - R2 + 5.0_dp/8.0_dp*P2)
+
+      !! Find the Phi values
+      Cphi1p = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 + Q1)
+      Cphi1m = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 - Q1)
+      Cphi2p = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 + Q2)
+      Cphi2m = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 - Q2)
+
+      !! Find the Z values
+      z1p = 2.0_dp*pi*(0.5_dp*eta0 + eta1 + eta2)
+      z1m = 2.0_dp*pi*(0.5_dp*eta0 - eta1 + eta2)
+      z2p = 2.0_dp*pi*(-1.0_dp/8.0_dp*eta0 + eta2 + eta3)
+      z2m = 2.0_dp*pi*(-1.0_dp/8.0_dp*eta0 + eta2 - eta3)
+
+      !! Find A1 matrix
+      AA1(1,1) = phi1m ; AA1(1,2) = phi1p*e1 ; AA1(1,3) = phi2m ; AA1(1,4) = phi2p*e2
+      AA1(2,1) = Cphi1m ; AA1(2,2) = Cphi1p*e1 ; AA1(2,3) = Cphi2m; AA1(2,4) = Cphi2p*e2
+      AA1(3,1) = phi1p*e1 ; AA1(3,2) = phi1m ; AA1(3,3) = phi2p*e2 ; AA1(3,4) = phi2m    
+      AA1(4,1) = Cphi1p*e1 ; AA1(4,2) = Cphi1m ; AA1(4,3) = Cphi2p*e2 ; AA1(4,4) = Cphi2m
+
+      !! Find H1 vector
+      H1(1) = -z1m ;  H1(2) = -z2m ;  H1(3) = -z1p * dtr(k) ; H1(4) = -z2p * dtr(k)
+
+      !! Find A2 matrix
+      AA2(1,1) = phi1m*e1 ; AA2(1,2) = phi1p ; AA2(1,3) = phi2m*e2 ; AA2(1,4) = phi2p
+      AA2(2,1) = Cphi1m*e1 ; AA2(2,2) = Cphi1p ; AA2(2,3) = Cphi2m*e2; AA2(2,4) = Cphi2p
+      AA2(3,1) = phi1p ; AA2(3,2) = phi1m*e1 ; AA2(3,3) = phi2p ; AA2(3,4) = phi2m*e2    
+      AA2(4,1) = Cphi1p ; AA2(4,2) = Cphi1m*e1 ; AA2(4,3) = Cphi2p ; AA2(4,4) = Cphi2m*e2
+
+      !! Find H2 vector
+      H2(1) = z1m * dtr(k) ;  H2(2) = z2m * dtr(k) ;  H2(3) = z1p ; H2(4) = z2p
+
+      !! Now we need to invert the A1 matrix - Zhang and Li (2013) use a adjugate matrix method 
+      !! with some reduction in the matrix order (not 100% sure what they did)
+      !! We primarily use the same method but keep the 4x4 layout, with code from the Fortran wiki (matinv4)
+      !! We have LU decomposition here as an alternative in case of numerical instability (and for testing)
+
+      AA1_i(:,:) = matinv4(AA1(:,:)) ! Use matrix determinant and adjugate method (faster but can be numerically unstable)
+      !call inv_LU(AA1,4,4,AA1_i)    ! Use LU decomposition (slower but probably more stable)
+
+      !! Multiply the AA1_i and AA2 matrices
+      AA12(:,:) = matmul(AA2(:,:),AA1_i(:,:))
+
+      !! Multiply the AA12 and H2 matrix
+      AA12H1(:) = matmul(AA12(:,:),H1(:))
+
+      !! Firect flux component - now we have the flux array (F(1)(2) = neg flux at lower,F(3)(4) = pos flux at upper)
+      Fdir(:) = AA12H1(:) + H2(:)
+
+      !! Store the direct beam reflection and transmission for this layer - normalised by the beam flux
+      Rdir(k,1) = Fdir(3)/(Finc*mu_z)
+      Rdir(k,2) = Fdir(4)/(Finc*mu_z)
+
+      Tdir(k,1) = Fdir(1)/(Finc*mu_z)
+      Tdir(k,2) = Fdir(2)/(Finc*mu_z)
+
+      !! Now find the diffusive flux component
+
+      !! Vector H3 is
+      H3(1) = 1.0_dp; H3(2) = 0.0_dp; H3(3) = 0.0_dp; H3(4) = 0.0_dp 
+
+      !! Multiply the AA12 and H3 matrix to get `a' boundary fluxes at layer edges (levels)
+      Fdiffa(:) = matmul(AA12(:,:),H3(:))
+
+      !! Vector H4 is
+      H4(1) = 0.0_dp; H4(2) = 1.0_dp; H4(3) = 0.0_dp; H4(4) = 0.0_dp 
+
+      !! Multiply the AA12 and H4 matrix to get `b' boundary fluxes at layer edges (levels)
+      Fdiffb(:) = matmul(AA12(:,:),H4(:))
+
+      !! Store the diffuse reflection and transmission for this layer - no normalisation
+      Rdiff(k,1,1) = Fdiffa(3)
+      Rdiff(k,1,2) = Fdiffb(3)
+      Rdiff(k,2,2) = Fdiffa(4)
+      Rdiff(k,2,1) = Fdiffb(4)
+  
+      Tdiff(k,1,1) = Fdiffa(1)
+      Tdiff(k,1,2) = Fdiffb(1)
+      Tdiff(k,2,1) = Fdiffa(2)
+      Tdiff(k,2,2) = Fdiffb(2)
+
+    end do
+
+    !! We now have the transmission and reflection coefficents for both the direct and diffuse components
+    !! Now we perform the doubling-adding method accros multiple layers
+
+    !! Here we directly copy the code from J. Li 
+    !! we can probably make an improvement on this at some point through vectorisation
+
+    !! Do boundary conditons first
+    ! Upper
+    T1k(1,:) = 0.0_dp
+    Rd1k(1,:,:) = 0.0_dp
+
+    ! Lower
+    R1k(nlev,1) = w_surf ; R1k(nlev,2) = -w_surf/4.0_dp 
+    Rst1k(nlev,1,1) = w_surf ; Rst1k(nlev,1,2) = 0.0_dp
+    Rst1k(nlev,2,1) = -w_surf/4.0_dp ; Rst1k(nlev,2,2) = 0.0_dp
+
+    !! Direct beam transmission to level
+    T(:) = exp(-tau(:)/mu_z)
+
+    !! Cumulative transmission
+    scumdtr(1) = T(1)
+
+    do k = 2, nlev
+      km1 = k - 1        
+        c11                =  1.0d0 - Rdiff(km1,1,1) * Rd1k(km1,1,1) - Rdiff(km1,1,2) * Rd1k(km1,2,1)
+        c12                =      - Rdiff(km1,1,1) * Rd1k(km1,1,2) - Rdiff(km1,1,2) * Rd1k(km1,2,2)
+        c21                =      - Rdiff(km1,2,1) * Rd1k(km1,1,1) - Rdiff(km1,2,2) * Rd1k(km1,2,1)
+        c22                =  1.0d0 - Rdiff(km1,2,1) * Rd1k(km1,1,2) - Rdiff(km1,2,2) * Rd1k(km1,2,2)
+        pmod             =  c11 * c22 - c12 * c21
+        t11              =  c22 / pmod
+        t12              = -c12 / pmod
+        t21              = -c21 / pmod
+        t22              =  c11 / pmod
+
+        b11              =  t11 * Tdiff(km1,1,1) + t12 * Tdiff(km1,2,1)
+        b12              =  t11 * Tdiff(km1,1,2) + t12 * Tdiff(km1,2,2)
+        b21              =  t21 * Tdiff(km1,1,1) + t22 * Tdiff(km1,2,1)
+        b22              =  t21 * Tdiff(km1,1,2) + t22 * Tdiff(km1,2,2)
+!
+        scumdtr(k)   =  scumdtr(km1)*dtr(km1)
+        d1               =  Rdir(km1,1) * scumdtr(km1) + Rdiff(km1,1,1) * T1k(km1,1) + &
+                            Rdiff(km1,1,2) * T1k(km1,2)
+        d2               =  Rdir(km1,2) * scumdtr(km1) + Rdiff(km1,2,1) * T1k(km1,1) + &
+                            Rdiff(km1,2,2) * T1k(km1,2)
+        uu1              =  d1 * t11 + d2 * t12
+        uu2              =  d1 * t21 + d2 * t22
+        du1              =  T1k(km1,1) + uu1 * Rd1k(km1,1,1) + uu2 * Rd1k(km1,1,2)
+        du2              =  T1k(km1,2) + uu1 * Rd1k(km1,2,1) + uu2 * Rd1k(km1,2,2)
+        T1k(k,1)   =  Tdir(km1,1) * scumdtr(km1) + du1 * Tdiff(km1,1,1) + du2 * Tdiff(km1,1,2)
+        T1k(k,2)   =  Tdir(km1,2) * scumdtr(km1) + du1 * Tdiff(km1,2,1) + du2 * Tdiff(km1,2,2)
+!
+        a11              =  Tdiff(km1,1,1) * Rd1k(km1,1,1) + Tdiff(km1,1,2) * Rd1k(km1,2,1)
+        a12              =  Tdiff(km1,1,1) * Rd1k(km1,1,2) + Tdiff(km1,1,2) * Rd1k(km1,2,2)
+        a21              =  Tdiff(km1,2,1) * Rd1k(km1,1,1) + Tdiff(km1,2,2) * Rd1k(km1,2,1)
+        a22              =  Tdiff(km1,2,1) * Rd1k(km1,1,2) + Tdiff(km1,2,2) * Rd1k(km1,2,2)
+        Rd1k(k,1,1) =  Rdiff(km1,1,1) + a11 * b11 + a12 * b21
+        Rd1k(k,1,2) =  Rdiff(km1,1,2) + a11 * b12 + a12 * b22
+        Rd1k(k,2,1) =  Rdiff(km1,2,1) + a21 * b11 + a22 * b21
+        Rd1k(k,2,2) =  Rdiff(km1,2,2) + a21 * b12 + a22 * b22
+    end do
+  
+
+    do l = nlay, 1, -1
+      lp1 = l + 1
+        c11              =  1.0d0 - Rst1k(lp1,1,1) * Rdiff(l,1,1) - Rst1k(lp1,1,2) * Rdiff(l,2,1)
+        c12              =      - Rst1k(lp1,1,1) * Rdiff(l,1,2) - Rst1k(lp1,1,2) * Rdiff(l,2,2)
+        c21              =      - Rst1k(lp1,2,1) * Rdiff(l,1,1) - Rst1k(lp1,2,2) * Rdiff(l,2,1)
+        c22              =  1.0d0 - Rst1k(lp1,2,1) * Rdiff(l,1,2) - Rst1k(lp1,2,2) * Rdiff(l,2,2)
+        pmod             =  c11 * c22 - c12 * c21
+        t11              =  c22 / pmod
+        t12              = -c12 / pmod
+        t21              = -c21 / pmod
+        t22              =  c11 / pmod
+        d1               =  R1k(lp1,1) * dtr(l) + Rst1k(lp1,1,1) * Tdir(l,1) + &
+                            Rst1k(lp1,1,2) * Tdir(l,2)
+        d2               =  R1k(lp1,2) * dtr(l) + Rst1k(lp1,2,1) * Tdir(l,1) + &
+                            Rst1k(lp1,2,2) * Tdir(l,2)
+        uu1              =  d1 * t11 + d2 * t12
+        uu2              =  d1 * t21 + d2 * t22
+        R1k(l,1)   =  Rdir(l,1) + uu1 * Tdiff(l,1,1) + uu2 * Tdiff(l,1,2)
+        R1k(l,2)   =  Rdir(l,2) + uu1 * Tdiff(l,2,1) + uu2 * Tdiff(l,2,2)
+!
+        c11              =  1.0d0 - Rdiff(l,1,1) * Rst1k(lp1,1,1) - Rdiff(l,1,2) * Rst1k(lp1,2,1)
+        c12              =      - Rdiff(l,1,1) * Rst1k(lp1,1,2) - Rdiff(l,1,2) * Rst1k(lp1,2,2)
+        c21              =      - Rdiff(l,2,1) * Rst1k(lp1,1,1) - Rdiff(l,2,2) * Rst1k(lp1,2,1)
+        c22              =  1.0d0 - Rdiff(l,2,1) * Rst1k(lp1,1,2) - Rdiff(l,2,2) * Rst1k(lp1,2,2)
+        pmod             =  c11 * c22 - c12 * c21
+        t11              =  c22 / pmod
+        t12              = -c12 / pmod
+        t21              = -c21 / pmod
+        t22              =  c11 / pmod
+!
+        r11              =  Tdiff(l,1,1) * (t11 * Rst1k(lp1,1,1) +  t21 * Rst1k(lp1,1,2)) + &
+                           & Tdiff(l,1,2) * (t11 * Rst1k(lp1,2,1) +  t21 * Rst1k(lp1,2,2))
+        r12              =  Tdiff(l,1,1) * (t12 * Rst1k(lp1,1,1) +  t22 * Rst1k(lp1,1,2)) + &
+                          & Tdiff(l,1,2) * (t12 * Rst1k(lp1,2,1) +  t22 * Rst1k(lp1,2,2))
+        r21              =  Tdiff(l,2,1) * (t11 * Rst1k(lp1,1,1) +  t21 * Rst1k(lp1,1,2)) + &
+                          &  Tdiff(l,2,2) * (t11 * Rst1k(lp1,2,1) +  t21 * Rst1k(lp1,2,2))
+        r22              =  Tdiff(l,2,1) * (t12 * Rst1k(lp1,1,1) +  t22 * Rst1k(lp1,1,2)) + &
+                          &  Tdiff(l,2,2) * (t12 * Rst1k(lp1,2,1) +  t22 * Rst1k(lp1,2,2))
+!
+        Rst1k(l,1,1) =  Rdiff(l,1,1) + r11 * Tdiff(l,1,1) + r12 * Tdiff(l,2,1)
+        Rst1k(l,1,2) =  Rdiff(l,1,2) + r11 * Tdiff(l,1,2) + r12 * Tdiff(l,2,2)
+        Rst1k(l,2,1) =  Rdiff(l,2,1) + r21 * Tdiff(l,1,1) + r22 * Tdiff(l,2,1)
+        Rst1k(l,2,2) =  Rdiff(l,2,2) + r21 * Tdiff(l,1,2) + r22 * Tdiff(l,2,2)
     end do
 
     do k = 1, nlev
-
-      w_s(k) = om(k) * ((1.0_dp - f(k))/(1.0_dp - om(k)*f(k)))
-      g_s(k) = (g(k) - f(k))/(1.0_dp - f(k))
-      lam(k) = sqrt(3.0_dp*(1.0_dp - w_s(k))*(1.0_dp - w_s(k)*g_s(k)))
-      gam(k) = 0.5_dp * w_s(k) * (1.0_dp + 3.0_dp*g_s(k)*(1.0_dp - w_s(k))*mu_z**2)/(1.0_dp - lam(k)**2*mu_z**2)
-      alp(k) = 0.75_dp * w_s(k) * mu_z * (1.0_dp + g_s(k)*(1.0_dp - w_s(k)))/(1.0_dp - lam(k)**2*mu_z**2)
-      u(k) = (3.0_dp/2.0_dp) * ((1.0_dp - w_s(k)*g_s(k))/lam(k))
-
-      lamtau = min(lam(k)*tau_Ve_s(k),99.0_dp)
-      e_lamtau = exp(-lamtau)
-
-      N(k) = (u(k) + 1.0_dp)**2 * 1.0_dp/e_lamtau - (u(k) - 1.0_dp)**2  * e_lamtau
-
-      R_b(k) = (u(k) + 1.0_dp)*(u(k) - 1.0_dp)*(1.0_dp/e_lamtau - e_lamtau)/N(k)
-      T_b(k) = 4.0_dp * u(k)/N(k)
-
-      arg = min(tau_Ve_s(k)/mu_z,99.0_dp)
-      Tf(k) = exp(-arg)
-
-      apg = alp(k) + gam(k)
-      amg = alp(k) - gam(k)
-
-      R(k) = amg*(T_b(k)*Tf(k) - 1.0_dp) + apg*R_b(k)
-
-      T(k) = apg*T_b(k) + (amg*R_b(k) - (apg - 1.0_dp))*Tf(k)
-
-      R(k) = max(R(k), 0.0_dp)
-      T(k) = max(T(k), 0.0_dp)
-      R_b(k) = max(R_b(k), 0.0_dp)
-      T_b(k) = max(T_b(k), 0.0_dp)
+        c11              =  1.0d0 - Rst1k(k,1,1) * Rd1k(k,1,1) - Rst1k(k,1,2) * Rd1k(k,2,1)
+        c12              =      - Rst1k(k,1,1) * Rd1k(k,1,2) - Rst1k(k,1,2) * Rd1k(k,2,2)
+        c21              =      - Rst1k(k,2,1) * Rd1k(k,1,1) - Rst1k(k,2,2) * Rd1k(k,2,1)
+        c22              =  1.0d0 - Rst1k(k,2,1) * Rd1k(k,1,2) - Rst1k(k,2,2) * Rd1k(k,2,2)
+        pmod             =  c11 * c22 - c12 * c21
+        t11              =  c22 / pmod
+        t12              = -c12 / pmod
+        t21              = -c21 / pmod
+        t22              =  c11 / pmod
+!
+        d1               =  R1k(k,1) * scumdtr(k) + Rst1k(k,1,1) * T1k(k,1) + &
+                           & Rst1k(k,1,2) * T1k(k,2)
+        d2               =  R1k(k,2) * scumdtr(k) + Rst1k(k,2,1) * T1k(k,1) + &
+                           & Rst1k(k,2,2) * T1k(k,2)
+        uu1              =  d1 * t11 + d2 * t12
+        du1              =  T1k(k,1) + Rd1k(k,1,1) * uu1 + Rd1k(k,1,2) * (d1 * t21 + d2 * t22)
+        reflt(k)   =  uu1
+        trant(k)   =  du1 + scumdtr(k)
 
     end do
 
-    !! Calculate downward flux
-    do k = 1, nlay
-      sw_down(k) = Tf(k) + ((T(k) - Tf(k)) +  &
-      & Tf(k)*R(k+1)*R_b(k))/(1.0_dp - R_b(k)*R_b(k+1))
-    end do
-    sw_down(nlev) = Tf(nlev)
+    !! Down and up fluxes are multiplied by the incident flux
+    !! up is defined as negative in the adding method, so we make it positive here
+    sw_down(:) = trant(:)*mu_z*Finc
+    sw_up(:) = -reflt(:)*mu_z*Finc
 
-    !! Calculate upward flux
-    do k = 1, nlay
-      sw_up(k) = (Tf(k)*R(k+1) + (T(k) - Tf(k))*R_b(k+1))/(1.0_dp - R_b(k)*R_b(k+1))
-    end do
-    sw_up(nlev) = sw_down(nlev) * w_surf
-
-    !! Scale with the incident flux
-    sw_down(:) = sw_down(:) * mu_z * Finc
-    sw_up(:) = sw_up(:) * mu_z * Finc
-
-  end subroutine sw_adding
+  end subroutine sw_SDA
 
   ! Perform linear interpolation in log10 space
   subroutine linear_log_interp(xval, x1, x2, y1, y2, yval)
@@ -375,5 +694,193 @@ contains
     end if
 
   end subroutine bezier_interp
+
+  pure function matinv4(A) result(B)
+    !! Performs a direct calculation of the inverse of a 4×4 matrix.
+    real(dp), intent(in) :: A(4,4)   !! Matrix
+    real(dp)             :: B(4,4)   !! Inverse matrix
+    real(dp)             :: detinv, s0, s1, s2, s3, s4, s5, c5, c4, c3, c2, c1, c0
+
+    s0 = A(1,1) * A(2,2) - A(2,1) * A(1,2)
+    s1 = A(1,1) * A(2,3) - A(2,1) * A(1,3)
+    s2 = A(1,1) * A(2,4) - A(2,1) * A(1,4)
+    s3 = A(1,2) * A(2,3) - A(2,2) * A(1,3)
+    s4 = A(1,2) * A(2,4) - A(2,2) * A(1,4)
+    s5 = A(1,3) * A(2,4) - A(2,3) * A(1,4)
+
+    c5 = A(3,3) * A(4,4) - A(4,3) * A(3,4)
+    c4 = A(3,2) * A(4,4) - A(4,2) * A(3,4)
+    c3 = A(3,2) * A(4,3) - A(4,2) * A(3,3)
+    c2 = A(3,1) * A(4,4) - A(4,1) * A(3,4)
+    c1 = A(3,1) * A(4,3) - A(4,1) * A(3,3)
+    c0 = A(3,1) * A(4,2) - A(4,1) * A(3,2)
+
+    detinv = 1.0_dp / (s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0)
+
+    B(1,1) = ( A(2,2) * c5 - A(2,3) * c4 + A(2,4) * c3) * detinv
+    B(1,2) = (-A(1,2) * c5 + A(1,3) * c4 - A(1,4) * c3) * detinv
+    B(1,3) = ( A(4,2) * s5 - A(4,3) * s4 + A(4,4) * s3) * detinv
+    B(1,4) = (-A(3,2) * s5 + A(3,3) * s4 - A(3,4) * s3) * detinv
+
+    B(2,1) = (-A(2,1) * c5 + A(2,3) * c2 - A(2,4) * c1) * detinv
+    B(2,2) = ( A(1,1) * c5 - A(1,3) * c2 + A(1,4) * c1) * detinv
+    B(2,3) = (-A(4,1) * s5 + A(4,3) * s2 - A(4,4) * s1) * detinv
+    B(2,4) = ( A(3,1) * s5 - A(3,3) * s2 + A(3,4) * s1) * detinv
+
+    B(3,1) = ( A(2,1) * c4 - A(2,2) * c2 + A(2,4) * c0) * detinv
+    B(3,2) = (-A(1,1) * c4 + A(1,2) * c2 - A(1,4) * c0) * detinv
+    B(3,3) = ( A(4,1) * s4 - A(4,2) * s2 + A(4,4) * s0) * detinv
+    B(3,4) = (-A(3,1) * s4 + A(3,2) * s2 - A(3,4) * s0) * detinv
+
+    B(4,1) = (-A(2,1) * c3 + A(2,2) * c1 - A(2,3) * c0) * detinv
+    B(4,2) = ( A(1,1) * c3 - A(1,2) * c1 + A(1,3) * c0) * detinv
+    B(4,3) = (-A(4,1) * s3 + A(4,2) * s1 - A(4,3) * s0) * detinv
+    B(4,4) = ( A(3,1) * s3 - A(3,2) * s1 + A(3,3) * s0) * detinv
+
+  end function matinv4
+
+  subroutine ludcmp(A,n,np,indx,D)
+    implicit none
+
+    integer, intent(in) :: n, np
+    real(dp), dimension(np,np), intent(inout) :: A
+
+    integer, dimension(n), intent(out) :: indx
+    real(dp), intent(out) :: D
+
+    integer, parameter :: nmax = 100
+    real(dp), parameter :: tiny = 1.0e-20_dp
+    real(dp), dimension(nmax) :: vv
+
+    integer :: i, j, k, imax
+    real(dp) :: aamax, dum, sum
+
+    D = 1.0_dp
+
+    do i = 1, n
+      aamax = 0.0_dp
+      do j = 1, n
+        if (abs(A(i,j)) > aamax) then
+          aamax = abs(A(i,j))
+        end if
+      end do
+      if (aamax == 0.0_dp) then
+        print*, 'singualr matrix in LU decomp!'
+        stop
+      end if
+      vv(i) = 1.0_dp/aamax
+    end do
+
+  
+    do j = 1, n
+      do i = 1, j-1
+        sum = A(i,j)
+        do k = 1, i-1
+          sum = sum  - A(i,k)*A(k,j)
+        end do
+        A(i,j) = sum
+      end do
+      aamax = 0.0_dp
+      do i = j, n
+        sum = A(i,j)
+        do k = 1, j-1
+          sum = sum  - A(i,k)*A(k,j)
+        end do
+        A(i,j) = sum
+        dum = vv(i)*abs(sum)
+        if (dum >= aamax) then
+          imax = i
+          aamax = dum
+        end if
+      end do
+      if (j /= imax) then
+        do k = 1, n
+          dum = A(imax,k)
+          A(imax,k) = A(j,k)
+          A(j,k) = dum
+        end do 
+        D = -D
+        vv(imax) = vv(j)
+      end if
+      indx(j) = imax
+      if (A(j,j) == 0.0_dp) then
+        A(j,j) = tiny
+      end if
+      if (j /= n) then
+        dum = 1.0_dp/A(j,j)
+        do i = j+1, n
+          A(i,j) = A(i,j)*dum
+        end do
+      end if
+    end do
+
+  end subroutine ludcmp
+
+  subroutine lubksb(A, n, np, indx, B)
+    implicit none
+
+    integer, intent(in) :: n, np
+    integer, dimension(n), intent(in) :: indx
+    real(dp), dimension(np,np), intent(in) :: A
+
+    real(dp), dimension(n), intent(out) :: B
+
+    integer :: i, j, ii, ll
+    real(dp) :: sum
+
+    ii = 0
+
+    do i = 1, n
+      ll = indx(i)
+      sum = B(ll)
+      b(ll) = b(i)
+      if (ii /= 0) then
+        do j = ii,i-1
+          sum = sum - A(i,j)*B(j)
+        end do
+      else if (sum /= 0.0_dp) then
+        ii = i
+      end if
+      B(i) = sum
+    end do
+
+    do i = n, 1, -1
+      sum = B(i)
+      if (i < n) then
+        do j = i+1, n
+          sum = sum - A(i,j)*B(j)
+        end do
+      end if
+      B(i) = sum/A(i,i)
+    end do
+    
+  end subroutine lubksb
+
+  subroutine inv_LU(A,n,np,Y)
+    implicit none
+
+    integer, intent(in) :: n, np
+    real(dp), dimension(np,np), intent(inout) :: A
+
+    integer, dimension(n) :: indx
+    real(dp), dimension(np,np), intent(out) :: Y
+
+    real(dp) :: D
+    integer :: i, j
+
+    do i = 1, n
+      do j = 1, n
+        Y(i,j) = 0.0_dp
+      end do
+      Y(i,i) = 1.0_dp
+    end do
+
+    call ludcmp(A,n,np,indx,D)
+
+    do j = 1, n
+      call lubksb(A,n,np,indx,Y(1,j))
+    end do
+
+  end subroutine inv_LU
 
 end module ts_AA_L_mod

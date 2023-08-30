@@ -128,11 +128,6 @@ contains
       sw_down(:) = 0.0_dp
     end if
 
-    ! do i = 1, nlev
-    !   print*,i, pe(i)/1e5_dp, sw_up(i), sw_down(i)
-    ! end do
-    ! stop
-
     !! Longwave two-stream flux calculation
     be(:) = (sb * Te(:)**4)/pi  ! Integrated planck function intensity at levels
     be_int = (sb * Tint**4)/pi ! Integrated planck function intensity for internal temperature
@@ -434,7 +429,7 @@ contains
     end do
 
     ! Delta eddington scaling
-    w0(:) = (1.0_dp - gin(:)**2)*w01(:)/(1.0_dp-w01(:)*gin(:)**2)
+    w0(:) = ((1.0_dp - gin(:)**2)*w01(:))/(1.0_dp-w01(:)*gin(:)**2)
     dtau(:) = (1.0_dp-w01(:)*gin(:)**2)*dtau1(:)
     hg(:) = gin(:)/(1.0_dp + gin(:))
 

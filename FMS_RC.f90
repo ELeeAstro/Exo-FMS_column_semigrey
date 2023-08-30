@@ -22,7 +22,7 @@ program Exo_FMS_RC
   use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
   use ts_AA_E_mod, only : ts_AA_E
   use ts_AA_L_mod, only : ts_AA_L
-  use ts_PT_mod, only : ts_PT
+  !use ts_PT_mod, only : ts_PT
   use ts_VIM_mod, only : ts_VIM
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
@@ -182,6 +182,7 @@ program Exo_FMS_RC
   close(u)
 
   !! Time stepping loop
+  print*, 'Using: ', trim(ts_scheme)
   print*, 'Start timestepping'
 
   t_tot = 0.0_dp
@@ -317,8 +318,8 @@ program Exo_FMS_RC
       & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)  
     case('PT')
       ! Perturbation theory with analytical LW scattering
-      call ts_PT(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)          
+      ! call ts_PT(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+      ! & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)          
     case('VIM')
       ! Variational Iteration Method with analytical LW scattering
       call ts_VIM(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
