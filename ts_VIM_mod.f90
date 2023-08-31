@@ -419,18 +419,18 @@ contains
     real(dp), dimension(nlay,2) :: Rdir, Tdir
     real(dp), dimension(nlay,2,2) :: Rdiff, Tdiff 
 
-    real(dp), dimension(nlev,2) :: T1k, R1k
-    real(dp), dimension(nlev,2,2) :: Rst1k, Rd1k
+    real(dp), dimension(nlev,2) :: T1k, RkN, U, D
+    real(dp), dimension(nlev,2,2) :: Rst1k, RbkN
+
+    real(dp), dimension(2,2) :: E, TT, CC
+    real(dp), dimension(2) ::  DD
 
     real(dp), dimension(nlay) :: fc, sigma_sq, pmom2, c
     integer, parameter :: nstr = 4
     real(dp), parameter :: eps_20 = 1.0e-20_dp
 
     integer :: l, km1, lp1
-    real(dp)  :: c11, c12, c21, c22, pmod, t11, t12, t21, t22, b11, b12, &
-           &   b21, b22, uu1, uu2, du1, du2, a11, a12, a21, a22, r11, r12, r21, r22, d1, d2
 
-    real(dp), dimension(nlev) :: scumdtr, reflt, trant
     real(dp), dimension(nlay) :: dtr
 
     real(dp) :: hg2, alp
@@ -661,130 +661,72 @@ contains
     !! Do boundary conditons first
     ! Upper
     T1k(1,:) = 0.0_dp
-    Rd1k(1,:,:) = 0.0_dp
+    Rst1k(1,:,:) = 0.0_dp
 
     ! Lower
-    R1k(nlev,1) = w_surf ; R1k(nlev,2) = -w_surf/4.0_dp 
-    Rst1k(nlev,1,1) = w_surf ; Rst1k(nlev,1,2) = 0.0_dp
-    Rst1k(nlev,2,1) = -w_surf/4.0_dp ; Rst1k(nlev,2,2) = 0.0_dp
+    RkN(nlev,1) = w_surf ; RkN(nlev,2) = -w_surf/4.0_dp 
+    RbkN(nlev,1,1) = w_surf ; RbkN(nlev,1,2) = 0.0_dp
+    RbkN(nlev,2,1) = -w_surf/4.0_dp ; RbkN(nlev,2,2) = 0.0_dp
 
     !! Direct beam transmission to level
     T(:) = exp(-tau(:)/mu_z)
 
-    !! Cumulative transmission
-    scumdtr(1) = T(1)
+    !! E indentity matrix
+    E(1,1) = 1.0_dp ; E(1,2) = 0.0_dp ; E(2,1) = 0.0_dp ; E(2,2) = 1.0_dp
 
     do k = 2, nlev
       km1 = k - 1        
-        c11                =  1.0d0 - Rdiff(km1,1,1) * Rd1k(km1,1,1) - Rdiff(km1,1,2) * Rd1k(km1,2,1)
-        c12                =      - Rdiff(km1,1,1) * Rd1k(km1,1,2) - Rdiff(km1,1,2) * Rd1k(km1,2,2)
-        c21                =      - Rdiff(km1,2,1) * Rd1k(km1,1,1) - Rdiff(km1,2,2) * Rd1k(km1,2,1)
-        c22                =  1.0d0 - Rdiff(km1,2,1) * Rd1k(km1,1,2) - Rdiff(km1,2,2) * Rd1k(km1,2,2)
-        pmod             =  c11 * c22 - c12 * c21
-        t11              =  c22 / pmod
-        t12              = -c12 / pmod
-        t21              = -c21 / pmod
-        t22              =  c11 / pmod
 
-        b11              =  t11 * Tdiff(km1,1,1) + t12 * Tdiff(km1,2,1)
-        b12              =  t11 * Tdiff(km1,1,2) + t12 * Tdiff(km1,2,2)
-        b21              =  t21 * Tdiff(km1,1,1) + t22 * Tdiff(km1,2,1)
-        b22              =  t21 * Tdiff(km1,1,2) + t22 * Tdiff(km1,2,2)
-!
-        scumdtr(k)   =  scumdtr(km1)*dtr(km1)
-        d1               =  Rdir(km1,1) * scumdtr(km1) + Rdiff(km1,1,1) * T1k(km1,1) + &
-                            Rdiff(km1,1,2) * T1k(km1,2)
-        d2               =  Rdir(km1,2) * scumdtr(km1) + Rdiff(km1,2,1) * T1k(km1,1) + &
-                            Rdiff(km1,2,2) * T1k(km1,2)
-        uu1              =  d1 * t11 + d2 * t12
-        uu2              =  d1 * t21 + d2 * t22
-        du1              =  T1k(km1,1) + uu1 * Rd1k(km1,1,1) + uu2 * Rd1k(km1,1,2)
-        du2              =  T1k(km1,2) + uu1 * Rd1k(km1,2,1) + uu2 * Rd1k(km1,2,2)
-        T1k(k,1)   =  Tdir(km1,1) * scumdtr(km1) + du1 * Tdiff(km1,1,1) + du2 * Tdiff(km1,1,2)
-        T1k(k,2)   =  Tdir(km1,2) * scumdtr(km1) + du1 * Tdiff(km1,2,1) + du2 * Tdiff(km1,2,2)
-!
-        a11              =  Tdiff(km1,1,1) * Rd1k(km1,1,1) + Tdiff(km1,1,2) * Rd1k(km1,2,1)
-        a12              =  Tdiff(km1,1,1) * Rd1k(km1,1,2) + Tdiff(km1,1,2) * Rd1k(km1,2,2)
-        a21              =  Tdiff(km1,2,1) * Rd1k(km1,1,1) + Tdiff(km1,2,2) * Rd1k(km1,2,1)
-        a22              =  Tdiff(km1,2,1) * Rd1k(km1,1,2) + Tdiff(km1,2,2) * Rd1k(km1,2,2)
-        Rd1k(k,1,1) =  Rdiff(km1,1,1) + a11 * b11 + a12 * b21
-        Rd1k(k,1,2) =  Rdiff(km1,1,2) + a11 * b12 + a12 * b22
-        Rd1k(k,2,1) =  Rdiff(km1,2,1) + a21 * b11 + a22 * b21
-        Rd1k(k,2,2) =  Rdiff(km1,2,2) + a21 * b12 + a22 * b22
+      TT(:,:) = E(:,:) - matmul(Rdiff(km1,:,:),Rst1k(km1,:,:))
+      TT(:,:) = matinv2(TT(:,:))
+
+      CC(:,:) = matmul(Tdiff(km1,:,:),Rst1k(km1,:,:))
+      CC(:,:) = matmul(CC(:,:),TT(:,:))
+
+      DD(:) = Rdir(km1,:)*T(km1) + matmul(Rdiff(km1,:,:),T1k(km1,:))
+
+      T1k(k,:) = Tdir(km1,:)*T(km1) + matmul(Tdiff(km1,:,:), T1k(km1,:)) + matmul(CC(:,:),DD(:))
+
+      Rst1k(k,:,:) = Rdiff(km1,:,:) + matmul(CC(:,:),Tdiff(km1,:,:))
+
     end do
   
-
     do l = nlay, 1, -1
       lp1 = l + 1
-        c11              =  1.0d0 - Rst1k(lp1,1,1) * Rdiff(l,1,1) - Rst1k(lp1,1,2) * Rdiff(l,2,1)
-        c12              =      - Rst1k(lp1,1,1) * Rdiff(l,1,2) - Rst1k(lp1,1,2) * Rdiff(l,2,2)
-        c21              =      - Rst1k(lp1,2,1) * Rdiff(l,1,1) - Rst1k(lp1,2,2) * Rdiff(l,2,1)
-        c22              =  1.0d0 - Rst1k(lp1,2,1) * Rdiff(l,1,2) - Rst1k(lp1,2,2) * Rdiff(l,2,2)
-        pmod             =  c11 * c22 - c12 * c21
-        t11              =  c22 / pmod
-        t12              = -c12 / pmod
-        t21              = -c21 / pmod
-        t22              =  c11 / pmod
-        d1               =  R1k(lp1,1) * dtr(l) + Rst1k(lp1,1,1) * Tdir(l,1) + &
-                            Rst1k(lp1,1,2) * Tdir(l,2)
-        d2               =  R1k(lp1,2) * dtr(l) + Rst1k(lp1,2,1) * Tdir(l,1) + &
-                            Rst1k(lp1,2,2) * Tdir(l,2)
-        uu1              =  d1 * t11 + d2 * t12
-        uu2              =  d1 * t21 + d2 * t22
-        R1k(l,1)   =  Rdir(l,1) + uu1 * Tdiff(l,1,1) + uu2 * Tdiff(l,1,2)
-        R1k(l,2)   =  Rdir(l,2) + uu1 * Tdiff(l,2,1) + uu2 * Tdiff(l,2,2)
-!
-        c11              =  1.0d0 - Rdiff(l,1,1) * Rst1k(lp1,1,1) - Rdiff(l,1,2) * Rst1k(lp1,2,1)
-        c12              =      - Rdiff(l,1,1) * Rst1k(lp1,1,2) - Rdiff(l,1,2) * Rst1k(lp1,2,2)
-        c21              =      - Rdiff(l,2,1) * Rst1k(lp1,1,1) - Rdiff(l,2,2) * Rst1k(lp1,2,1)
-        c22              =  1.0d0 - Rdiff(l,2,1) * Rst1k(lp1,1,2) - Rdiff(l,2,2) * Rst1k(lp1,2,2)
-        pmod             =  c11 * c22 - c12 * c21
-        t11              =  c22 / pmod
-        t12              = -c12 / pmod
-        t21              = -c21 / pmod
-        t22              =  c11 / pmod
-!
-        r11              =  Tdiff(l,1,1) * (t11 * Rst1k(lp1,1,1) +  t21 * Rst1k(lp1,1,2)) + &
-                           & Tdiff(l,1,2) * (t11 * Rst1k(lp1,2,1) +  t21 * Rst1k(lp1,2,2))
-        r12              =  Tdiff(l,1,1) * (t12 * Rst1k(lp1,1,1) +  t22 * Rst1k(lp1,1,2)) + &
-                          & Tdiff(l,1,2) * (t12 * Rst1k(lp1,2,1) +  t22 * Rst1k(lp1,2,2))
-        r21              =  Tdiff(l,2,1) * (t11 * Rst1k(lp1,1,1) +  t21 * Rst1k(lp1,1,2)) + &
-                          &  Tdiff(l,2,2) * (t11 * Rst1k(lp1,2,1) +  t21 * Rst1k(lp1,2,2))
-        r22              =  Tdiff(l,2,1) * (t12 * Rst1k(lp1,1,1) +  t22 * Rst1k(lp1,1,2)) + &
-                          &  Tdiff(l,2,2) * (t12 * Rst1k(lp1,2,1) +  t22 * Rst1k(lp1,2,2))
-!
-        Rst1k(l,1,1) =  Rdiff(l,1,1) + r11 * Tdiff(l,1,1) + r12 * Tdiff(l,2,1)
-        Rst1k(l,1,2) =  Rdiff(l,1,2) + r11 * Tdiff(l,1,2) + r12 * Tdiff(l,2,2)
-        Rst1k(l,2,1) =  Rdiff(l,2,1) + r21 * Tdiff(l,1,1) + r22 * Tdiff(l,2,1)
-        Rst1k(l,2,2) =  Rdiff(l,2,2) + r21 * Tdiff(l,1,2) + r22 * Tdiff(l,2,2)
+
+      TT(:,:) = E(:,:) - matmul(RbkN(lp1,:,:),Rdiff(l,:,:))
+      TT(:,:) = matinv2(TT(:,:))
+
+      CC(:,:) = matmul(Tdiff(l,:,:),TT(:,:))
+
+      DD(:) = RkN(lp1,:)*dtr(l) + matmul(RbkN(lp1,:,:),Tdir(l,:))
+      DD(:) = matmul(CC(:,:),DD(:))
+
+      RkN(l,:) = Rdir(l,:) + matmul(CC(:,:), DD(:))
+
+      CC(:,:) = matmul(CC(:,:),RbkN(lp1,:,:))
+
+      RbkN(l,:,:) = Rdiff(l,:,:) + matmul(CC(:,:),Tdiff(l,:,:))
+
     end do
 
     do k = 1, nlev
-        c11              =  1.0d0 - Rst1k(k,1,1) * Rd1k(k,1,1) - Rst1k(k,1,2) * Rd1k(k,2,1)
-        c12              =      - Rst1k(k,1,1) * Rd1k(k,1,2) - Rst1k(k,1,2) * Rd1k(k,2,2)
-        c21              =      - Rst1k(k,2,1) * Rd1k(k,1,1) - Rst1k(k,2,2) * Rd1k(k,2,1)
-        c22              =  1.0d0 - Rst1k(k,2,1) * Rd1k(k,1,2) - Rst1k(k,2,2) * Rd1k(k,2,2)
-        pmod             =  c11 * c22 - c12 * c21
-        t11              =  c22 / pmod
-        t12              = -c12 / pmod
-        t21              = -c21 / pmod
-        t22              =  c11 / pmod
-!
-        d1               =  R1k(k,1) * scumdtr(k) + Rst1k(k,1,1) * T1k(k,1) + &
-                           & Rst1k(k,1,2) * T1k(k,2)
-        d2               =  R1k(k,2) * scumdtr(k) + Rst1k(k,2,1) * T1k(k,1) + &
-                           & Rst1k(k,2,2) * T1k(k,2)
-        uu1              =  d1 * t11 + d2 * t12
-        du1              =  T1k(k,1) + Rd1k(k,1,1) * uu1 + Rd1k(k,1,2) * (d1 * t21 + d2 * t22)
-        reflt(k)   =  uu1
-        trant(k)   =  du1 + scumdtr(k)
+
+      TT(:,:) = E(:,:) - matmul(RbkN(k,:,:),Rst1k(k,:,:))
+      TT(:,:) = matinv2(TT(:,:))
+
+      DD(:) = RkN(k,:)*T(k) + matmul(RbkN(k,:,:),T1k(k,:))
+
+      U(k,:) = matmul(TT(:,:),DD(:))
+
+      D(k,:) = T1k(k,:) + matmul(Rst1k(k,:,:),U(k,:))
 
     end do
 
     !! Down and up fluxes are multiplied by the incident flux
     !! up is defined as negative in the adding method, so we make it positive here
-    sw_down(:) = trant(:)*mu_z*Finc
-    sw_up(:) = -reflt(:)*mu_z*Finc
+    sw_down(:) = (D(:,1) + T(:))*mu_z*Finc
+    sw_up(:) = -U(:,1)*mu_z*Finc
 
   end subroutine sw_SDA
 
@@ -848,6 +790,23 @@ contains
     end if
 
   end subroutine bezier_interp
+
+  pure function matinv2(A) result(B)
+    !! Performs a direct calculation of the inverse of a 2×2 matrix.
+    real(dp), intent(in) :: A(2,2)   !! Matrix
+    real(dp)             :: B(2,2)   !! Inverse matrix
+    real(dp)             :: detinv
+
+    ! Calculate the inverse determinant of the matrix
+    detinv = 1.0_dp/(A(1,1)*A(2,2) - A(1,2)*A(2,1))
+
+    ! Calculate the inverse of the matrix
+    B(1,1) = detinv * A(2,2)
+    B(2,1) = -detinv * A(2,1)
+    B(1,2) = -detinv * A(1,2)
+    B(2,2) = detinv * A(1,1)
+
+  end function matinv2
 
   pure function matinv4(A) result(B)
   !! Performs a direct calculation of the inverse of a 4×4 matrix.
