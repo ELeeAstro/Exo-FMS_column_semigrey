@@ -17,6 +17,7 @@ module ts_VIM_mod
   !! Required constants
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
   real(dp), parameter :: twopi = 2.0_dp * pi
+  real(dp), parameter :: fourpi = 4.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
   !! Legendre quadrature for 1 nodes
@@ -401,7 +402,7 @@ contains
     integer :: k
     real(dp), dimension(nlay) :: w0, dtau, hg
     real(dp), dimension(nlev) :: tau, T
-    real(dp) :: mu1, mu2, mu3, f0
+    real(dp) :: f0
     real(dp) :: om0, om1, om2, om3
     real(dp) :: a0, a1, a2, a3, b0, b1, b2, b3
     real(dp) :: e1, e2
@@ -481,11 +482,6 @@ contains
       !! Layer transmission
       dtr(k) = exp(-dtau(k)/mu_z)
 
-      !! Mu moments
-      mu1 = mu_z
-      mu2 = mu_z**2
-      mu3 = mu_z**3
-
       !! Inverse zenith angle
       f0 = 1.0_dp/mu_z
 
@@ -520,11 +516,11 @@ contains
       a2 =  5.0_dp - w0(k)*om2 + eps_20
       a3 =  7.0_dp - w0(k)*om3 + eps_20
 
-      !! Find the b coefficents
-      b0 = 0.25_dp * w0(k)*om0 * Finc/pi
-      b1 = 0.25_dp * w0(k)*om1 * -(mu1) * Finc/pi
-      b2 = 0.125_dp * w0(k)*om2 * (3.0_dp * mu2 - 1.0_dp) * Finc/pi
-      b3 = 0.125_dp * w0(k)*om3 * (5.0_dp * -mu3 - 3.0_dp*-(mu_z)) * Finc/pi
+      !! Find the b coefficents - normalise Finc to 1 here
+      b0 = w0(k)*om0 / fourpi
+      b1 = w0(k)*om1 * -(mu_z) / fourpi
+      b2 = 0.5_dp * w0(k)*om2 * (3.0_dp * mu_z**2 - 1.0_dp) / fourpi
+      b3 = 0.5_dp * w0(k)*om3 * (5.0_dp * -mu_z**3 - 3.0_dp*-(mu_z)) / fourpi
 
       !! Find beta and gamma
       beta = a0*a1 + (4.0_dp/9.0_dp)*a0*a3 + (1.0_dp/9.0_dp)*a2*a3
@@ -566,22 +562,22 @@ contains
       eta3 = del3/delta
 
       !! Find the phi values
-      phi1p = 2.0_dp*pi*(0.5_dp + R1 + 5.0_dp/8.0_dp*P1)
-      phi1m = 2.0_dp*pi*(0.5_dp - R1 + 5.0_dp/8.0_dp*P1)
-      phi2p = 2.0_dp*pi*(0.5_dp + R2 + 5.0_dp/8.0_dp*P2)
-      phi2m = 2.0_dp*pi*(0.5_dp - R2 + 5.0_dp/8.0_dp*P2)
+      phi1p = twopi*(0.5_dp + R1 + 5.0_dp/8.0_dp*P1)
+      phi1m = twopi*(0.5_dp - R1 + 5.0_dp/8.0_dp*P1)
+      phi2p = twopi*(0.5_dp + R2 + 5.0_dp/8.0_dp*P2)
+      phi2m = twopi*(0.5_dp - R2 + 5.0_dp/8.0_dp*P2)
 
       !! Find the Phi values
-      Cphi1p = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 + Q1)
-      Cphi1m = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 - Q1)
-      Cphi2p = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 + Q2)
-      Cphi2m = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 - Q2)
+      Cphi1p = twopi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 + Q1)
+      Cphi1m = twopi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 - Q1)
+      Cphi2p = twopi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 + Q2)
+      Cphi2m = twopi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 - Q2)
 
       !! Find the Z values
-      z1p = 2.0_dp*pi*(0.5_dp*eta0 + eta1 + eta2)
-      z1m = 2.0_dp*pi*(0.5_dp*eta0 - eta1 + eta2)
-      z2p = 2.0_dp*pi*(-1.0_dp/8.0_dp*eta0 + eta2 + eta3)
-      z2m = 2.0_dp*pi*(-1.0_dp/8.0_dp*eta0 + eta2 - eta3)
+      z1p = twopi*(0.5_dp*eta0 + eta1 + eta2)
+      z1m = twopi*(0.5_dp*eta0 - eta1 + eta2)
+      z2p = twopi*(-1.0_dp/8.0_dp*eta0 + eta2 + eta3)
+      z2m = twopi*(-1.0_dp/8.0_dp*eta0 + eta2 - eta3)
 
       !! Find A1 matrix
       AA1(1,1) = phi1m ; AA1(1,2) = phi1p*e1 ; AA1(1,3) = phi2m ; AA1(1,4) = phi2p*e2
@@ -618,12 +614,12 @@ contains
       !! Firect flux component - now we have the flux array (F(1)(2) = neg flux at lower,F(3)(4) = pos flux at upper)
       Fdir(:) = AA12H1(:) + H2(:)
 
-      !! Store the direct beam reflection and transmission for this layer - normalised by the beam flux
-      Rdir(k,1) = Fdir(3)/(Finc*mu_z)
-      Rdir(k,2) = Fdir(4)/(Finc*mu_z)
+      !! Store the direct beam reflection and transmission for this layer - normalised by the beam flux (=1 here)
+      Rdir(k,1) = Fdir(3)/(mu_z)
+      Rdir(k,2) = Fdir(4)/(mu_z)
 
-      Tdir(k,1) = Fdir(1)/(Finc*mu_z)
-      Tdir(k,2) = Fdir(2)/(Finc*mu_z)
+      Tdir(k,1) = Fdir(1)/(mu_z)
+      Tdir(k,2) = Fdir(2)/(mu_z)
 
       !! Now find the diffusive flux component
 
