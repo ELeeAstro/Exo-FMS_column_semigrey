@@ -1,0 +1,123 @@
+module cheb_eval_mod
+  use, intrinsic :: iso_fortran_env
+  implicit none
+
+  !! Precision variables
+  integer, parameter :: dp = REAL64
+
+  real(dp), parameter :: root3_dbl_epsilon = 6.0554544523933429e-06_dp
+  real(dp), parameter :: log_dbl_epsilon = -3.6043653389117154e1_dp
+
+
+  real(dp), dimension(24), parameter :: c = (/1.269198414221126014_dp, &
+  &-0.248846446384140982_dp,&
+  &0.80526220717231041e-01_dp,&
+  &-0.25772733251968330e-01_dp,&
+  &0.7599878873073774e-02_dp,&
+  &-0.2030695581940405e-02_dp,&
+  & 0.490834586699330e-03_dp,&
+  &-0.107682239142021e-03_dp,&
+  & 0.21551726264290e-04_dp,&
+  &-0.3956705137384e-05_dp,&
+  & 0.6699240933896e-06_dp,&
+  & -0.105132180807e-06_dp,&
+  & 0.15362580199e-07_dp,&
+  & -0.20990960364e-08_dp,&
+  &  0.2692109538e-09_dp,&
+  & -0.325195242e-10_dp,&
+  &  0.37114816e-11_dp,&
+  & -0.4013652e-12_dp,&
+  &  0.412334e-13_dp,&
+  & -0.40338e-14_dp,&
+  &  0.3766e-15_dp,&
+  & -0.336e-16_dp,&
+  &  0.29e-17_dp,&
+  & -0.2e-18_dp/)
+  real(dp), dimension(23), parameter :: ca = (/1.9270464955068273729_dp,&
+  &-0.349293565204813805e-01_dp,&
+  & 0.14503383718983009e-02_dp,&
+  &-0.8925336718327903e-04_dp,&
+  & 0.70542392191184e-05_dp,&
+  &-0.6671727454761e-06_dp,&
+  & 0.724267589982e-07_dp,&
+  &-0.87825825606e-08_dp,&
+  & 0.11672234428e-08_dp,&
+  &-0.1676631281e-09_dp,&
+  & 0.257550158e-10_dp,&
+  &-0.41957888e-11_dp,&
+  & 0.7201041e-12_dp,&
+  &-0.1294906e-12_dp,&
+  & 0.24287e-13_dp,&
+  &-0.47331e-14_dp,&
+  & 0.95531e-15_dp,&
+  &-0.1991e-15_dp,&
+  & 0.428e-16_dp,&
+  &-0.94e-17_dp,&
+  & 0.21e-17_dp,&
+  &-0.5e-18_dp,&
+  & 0.1e-18_dp/)
+
+  real(dp), parameter :: low = -1.0_dp, up = 1.0_dp
+
+  public :: E3
+  private :: cheb_eval
+
+contains
+
+  function E3(x) result(y)
+    implicit none
+    real(dp), intent(in) :: x
+    real(dp) :: y, t, val_inf, s
+
+    val_inf = 0.892979511569249211_dp
+
+    if (x < 0.0_dp) then 
+      print*, 'Error in E3, negative x :',x
+      stop
+    else if (x < 1.6_dp*root3_dbl_epsilon) then
+      y = x
+    else if (x <= 2.0_dp) then
+      t = x**3/4.0_dp - 1.0_dp
+      y = x * cheb_eval(c(:),t)
+    else if (x < (-log_dbl_epsilon)**(1.0_dp/3.0_dp)) then
+      t = 16.0_dp/x**3 - 1.0_dp
+      s = exp(-x**3)/(3.0_dp*x**2)
+      y = cheb_eval(ca(:),t)     
+      y = val_inf - y * s
+    else
+      y = val_inf
+    end if
+
+    !print*, x, (-log_dbl_epsilon)**(1.0_dp/3.0_dp)
+
+  end function E3  
+
+  function cheb_eval(co,t) result(d)
+    implicit none
+
+    real(dp), dimension(:), intent(in) :: co
+    real(dp), intent(in) :: t
+
+    integer :: j, ord
+    real(dp) :: d, dd, y, y2 , temp 
+
+    y = (2.0_dp*t - low - up) / (up - low)
+    y2 = 2.0_dp * y
+
+    d = 0.0_dp
+    dd = 0.0_dp
+
+    ord = size(co)
+
+    do j = ord, 2, -1
+      temp = d
+      d = y2*d - dd + co(j)
+      dd = temp
+    end do
+
+    temp = d
+    d = y*d - dd + 0.5_dp * co(1)
+
+  end function cheb_eval
+
+end module cheb_eval_mod

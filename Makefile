@@ -41,7 +41,7 @@ OBJECTS = \
 	  ts_isothermal_2_mod.o \
 	  ts_Toon_mod.o \
     ts_Toon_scatter_mod.o \
-	  ts_Heng_mod.o \
+	  ts_Heng_ITS_mod.o \
 	  ts_short_char_mod_linear.o \
 		ts_short_char_mod_Bezier.o \
     ts_AA_E_mod.o \

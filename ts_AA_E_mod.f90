@@ -16,6 +16,7 @@ module ts_AA_E_mod
   !! Required constants
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
   real(dp), parameter :: twopi = 2.0_dp * pi
+  real(dp), parameter :: fourpi = 4.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
   !! Legendre quadrature for 1 nodes
@@ -251,7 +252,7 @@ contains
     integer :: k
     real(dp), dimension(nlay) :: w0, dtau, hg
     real(dp), dimension(nlev) :: tau, T
-    real(dp) :: mu1, mu2, mu3, f0
+    real(dp) :: f0
     real(dp) :: om0, om1, om2, om3
     real(dp) :: a0, a1, a2, a3, b0, b1, b2, b3
     real(dp) :: e1, e2
@@ -269,18 +270,18 @@ contains
     real(dp), dimension(nlay,2) :: Rdir, Tdir
     real(dp), dimension(nlay,2,2) :: Rdiff, Tdiff 
 
-    real(dp), dimension(nlev,2) :: T1k, R1k
-    real(dp), dimension(nlev,2,2) :: Rst1k, Rd1k
+    real(dp), dimension(nlev,2) :: T1k, RkN, U, D
+    real(dp), dimension(nlev,2,2) :: Rst1k, RbkN
+
+    real(dp), dimension(2,2) :: E, TT, CC
+    real(dp), dimension(2) ::  DD
 
     real(dp), dimension(nlay) :: fc, sigma_sq, pmom2, c
     integer, parameter :: nstr = 4
     real(dp), parameter :: eps_20 = 1.0e-20_dp
 
     integer :: l, km1, lp1
-    real(dp)  :: c11, c12, c21, c22, pmod, t11, t12, t21, t22, b11, b12, &
-           &   b21, b22, uu1, uu2, du1, du2, a11, a12, a21, a22, r11, r12, r21, r22, d1, d2
 
-    real(dp), dimension(nlev) :: scumdtr, reflt, trant
     real(dp), dimension(nlay) :: dtr
 
     real(dp) :: hg2, alp
@@ -331,11 +332,6 @@ contains
       !! Layer transmission
       dtr(k) = exp(-dtau(k)/mu_z)
 
-      !! Mu moments
-      mu1 = mu_z
-      mu2 = mu_z**2
-      mu3 = mu_z**3
-
       !! Inverse zenith angle
       f0 = 1.0_dp/mu_z
 
@@ -370,11 +366,11 @@ contains
       a2 =  5.0_dp - w0(k)*om2 + eps_20
       a3 =  7.0_dp - w0(k)*om3 + eps_20
 
-      !! Find the b coefficents
-      b0 = 0.25_dp * w0(k)*om0 * Finc/pi
-      b1 = 0.25_dp * w0(k)*om1 * -(mu1) * Finc/pi
-      b2 = 0.125_dp * w0(k)*om2 * (3.0_dp * mu2 - 1.0_dp) * Finc/pi
-      b3 = 0.125_dp * w0(k)*om3 * (5.0_dp * -mu3 - 3.0_dp*-(mu_z)) * Finc/pi
+      !! Find the b coefficents - normalise Finc to 1 here
+      b0 = w0(k)*om0 / fourpi
+      b1 = w0(k)*om1 * -(mu_z) / fourpi
+      b2 = 0.5_dp * w0(k)*om2 * (3.0_dp * mu_z**2 - 1.0_dp) / fourpi
+      b3 = 0.5_dp * w0(k)*om3 * (5.0_dp * -mu_z**3 - 3.0_dp*-(mu_z)) / fourpi
 
       !! Find beta and gamma
       beta = a0*a1 + (4.0_dp/9.0_dp)*a0*a3 + (1.0_dp/9.0_dp)*a2*a3
@@ -394,7 +390,7 @@ contains
       !! Find R, P and Q coefficents 
       !! NOTE: Zhang et al. (2013) has the wrong coefficent definitions
       !! Rooney et al. (2023) has the correct definitions and order in the matrix
-      !! So we we use the Rooney definitions, but keep the Zhang notation
+      !! So we use the Rooney definitions, but keep the Zhang notation
       Q1 = -3.0_dp/2.0_dp * (a0*a1/k1 - k1)/a3
       Q2 = -3.0_dp/2.0_dp * (a0*a1/k2 - k2)/a3
       R1 = -a0/k1
@@ -416,22 +412,22 @@ contains
       eta3 = del3/delta
 
       !! Find the phi values
-      phi1p = 2.0_dp*pi*(0.5_dp + R1 + 5.0_dp/8.0_dp*P1)
-      phi1m = 2.0_dp*pi*(0.5_dp - R1 + 5.0_dp/8.0_dp*P1)
-      phi2p = 2.0_dp*pi*(0.5_dp + R2 + 5.0_dp/8.0_dp*P2)
-      phi2m = 2.0_dp*pi*(0.5_dp - R2 + 5.0_dp/8.0_dp*P2)
+      phi1p = twopi*(0.5_dp + R1 + 5.0_dp/8.0_dp*P1)
+      phi1m = twopi*(0.5_dp - R1 + 5.0_dp/8.0_dp*P1)
+      phi2p = twopi*(0.5_dp + R2 + 5.0_dp/8.0_dp*P2)
+      phi2m = twopi*(0.5_dp - R2 + 5.0_dp/8.0_dp*P2)
 
       !! Find the Phi values
-      Cphi1p = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 + Q1)
-      Cphi1m = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 - Q1)
-      Cphi2p = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 + Q2)
-      Cphi2m = 2.0_dp*pi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 - Q2)
+      Cphi1p = twopi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 + Q1)
+      Cphi1m = twopi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P1 - Q1)
+      Cphi2p = twopi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 + Q2)
+      Cphi2m = twopi*(-1.0_dp/8.0_dp + 5.0_dp/8.0_dp*P2 - Q2)
 
       !! Find the Z values
-      z1p = 2.0_dp*pi*(0.5_dp*eta0 + eta1 + eta2)
-      z1m = 2.0_dp*pi*(0.5_dp*eta0 - eta1 + eta2)
-      z2p = 2.0_dp*pi*(-1.0_dp/8.0_dp*eta0 + eta2 + eta3)
-      z2m = 2.0_dp*pi*(-1.0_dp/8.0_dp*eta0 + eta2 - eta3)
+      z1p = twopi*(0.5_dp*eta0 + eta1 + eta2)
+      z1m = twopi*(0.5_dp*eta0 - eta1 + eta2)
+      z2p = twopi*(-1.0_dp/8.0_dp*eta0 + eta2 + eta3)
+      z2m = twopi*(-1.0_dp/8.0_dp*eta0 + eta2 - eta3)
 
       !! Find A1 matrix
       AA1(1,1) = phi1m ; AA1(1,2) = phi1p*e1 ; AA1(1,3) = phi2m ; AA1(1,4) = phi2p*e2
@@ -452,8 +448,8 @@ contains
       H2(1) = z1m * dtr(k) ;  H2(2) = z2m * dtr(k) ;  H2(3) = z1p ; H2(4) = z2p
 
       !! Now we need to invert the A1 matrix - Zhang and Li (2013) use a adjugate matrix method 
-      !! with some reduction in the matrix order (not 100% sure what they did)
-      !! We primarily use the same method but keep the 4x4 layout, with code from the Fortran wiki (matinv4)
+      !! with some reduction in the matrix order or used symetrical term (not 100% sure what they did)
+      !! We primarily use the same method but keep the 4x4 layout
       !! We have LU decomposition here as an alternative in case of numerical instability (and for testing)
 
       AA1_i(:,:) = matinv4(AA1(:,:)) ! Use matrix determinant and adjugate method (faster but can be numerically unstable)
@@ -468,12 +464,12 @@ contains
       !! Firect flux component - now we have the flux array (F(1)(2) = neg flux at lower,F(3)(4) = pos flux at upper)
       Fdir(:) = AA12H1(:) + H2(:)
 
-      !! Store the direct beam reflection and transmission for this layer - normalised by the beam flux
-      Rdir(k,1) = Fdir(3)/(Finc*mu_z)
-      Rdir(k,2) = Fdir(4)/(Finc*mu_z)
+      !! Store the direct beam reflection and transmission for this layer - normalised by the beam flux (=1 here)
+      Rdir(k,1) = Fdir(3)/(mu_z)
+      Rdir(k,2) = Fdir(4)/(mu_z)
 
-      Tdir(k,1) = Fdir(1)/(Finc*mu_z)
-      Tdir(k,2) = Fdir(2)/(Finc*mu_z)
+      Tdir(k,1) = Fdir(1)/(mu_z)
+      Tdir(k,2) = Fdir(2)/(mu_z)
 
       !! Now find the diffusive flux component
 
@@ -505,136 +501,76 @@ contains
     !! We now have the transmission and reflection coefficents for both the direct and diffuse components
     !! Now we perform the doubling-adding method accros multiple layers
 
-    !! Here we directly copy the code from J. Li 
-    !! we can probably make an improvement on this at some point through vectorisation
-
     !! Do boundary conditons first
+
     ! Upper
     T1k(1,:) = 0.0_dp
-    Rd1k(1,:,:) = 0.0_dp
+    Rst1k(1,:,:) = 0.0_dp
 
     ! Lower
-    R1k(nlev,1) = w_surf ; R1k(nlev,2) = -w_surf/4.0_dp 
-    Rst1k(nlev,1,1) = w_surf ; Rst1k(nlev,1,2) = 0.0_dp
-    Rst1k(nlev,2,1) = -w_surf/4.0_dp ; Rst1k(nlev,2,2) = 0.0_dp
+    RkN(nlev,1) = w_surf ; RkN(nlev,2) = -w_surf/4.0_dp 
+    RbkN(nlev,1,1) = w_surf ; RbkN(nlev,1,2) = 0.0_dp
+    RbkN(nlev,2,1) = -w_surf/4.0_dp ; RbkN(nlev,2,2) = 0.0_dp
 
     !! Direct beam transmission to level
     T(:) = exp(-tau(:)/mu_z)
 
-    !! Cumulative transmission
-    scumdtr(1) = T(1)
+    !! E indentity matrix
+    E(1,1) = 1.0_dp ; E(1,2) = 0.0_dp ; E(2,1) = 0.0_dp ; E(2,2) = 1.0_dp
 
     do k = 2, nlev
       km1 = k - 1        
-        c11                =  1.0d0 - Rdiff(km1,1,1) * Rd1k(km1,1,1) - Rdiff(km1,1,2) * Rd1k(km1,2,1)
-        c12                =      - Rdiff(km1,1,1) * Rd1k(km1,1,2) - Rdiff(km1,1,2) * Rd1k(km1,2,2)
-        c21                =      - Rdiff(km1,2,1) * Rd1k(km1,1,1) - Rdiff(km1,2,2) * Rd1k(km1,2,1)
-        c22                =  1.0d0 - Rdiff(km1,2,1) * Rd1k(km1,1,2) - Rdiff(km1,2,2) * Rd1k(km1,2,2)
-        pmod             =  c11 * c22 - c12 * c21
-        t11              =  c22 / pmod
-        t12              = -c12 / pmod
-        t21              = -c21 / pmod
-        t22              =  c11 / pmod
 
-        b11              =  t11 * Tdiff(km1,1,1) + t12 * Tdiff(km1,2,1)
-        b12              =  t11 * Tdiff(km1,1,2) + t12 * Tdiff(km1,2,2)
-        b21              =  t21 * Tdiff(km1,1,1) + t22 * Tdiff(km1,2,1)
-        b22              =  t21 * Tdiff(km1,1,2) + t22 * Tdiff(km1,2,2)
-!
-        scumdtr(k)   =  scumdtr(km1)*dtr(km1)
-        d1               =  Rdir(km1,1) * scumdtr(km1) + Rdiff(km1,1,1) * T1k(km1,1) + &
-                            Rdiff(km1,1,2) * T1k(km1,2)
-        d2               =  Rdir(km1,2) * scumdtr(km1) + Rdiff(km1,2,1) * T1k(km1,1) + &
-                            Rdiff(km1,2,2) * T1k(km1,2)
-        uu1              =  d1 * t11 + d2 * t12
-        uu2              =  d1 * t21 + d2 * t22
-        du1              =  T1k(km1,1) + uu1 * Rd1k(km1,1,1) + uu2 * Rd1k(km1,1,2)
-        du2              =  T1k(km1,2) + uu1 * Rd1k(km1,2,1) + uu2 * Rd1k(km1,2,2)
-        T1k(k,1)   =  Tdir(km1,1) * scumdtr(km1) + du1 * Tdiff(km1,1,1) + du2 * Tdiff(km1,1,2)
-        T1k(k,2)   =  Tdir(km1,2) * scumdtr(km1) + du1 * Tdiff(km1,2,1) + du2 * Tdiff(km1,2,2)
-!
-        a11              =  Tdiff(km1,1,1) * Rd1k(km1,1,1) + Tdiff(km1,1,2) * Rd1k(km1,2,1)
-        a12              =  Tdiff(km1,1,1) * Rd1k(km1,1,2) + Tdiff(km1,1,2) * Rd1k(km1,2,2)
-        a21              =  Tdiff(km1,2,1) * Rd1k(km1,1,1) + Tdiff(km1,2,2) * Rd1k(km1,2,1)
-        a22              =  Tdiff(km1,2,1) * Rd1k(km1,1,2) + Tdiff(km1,2,2) * Rd1k(km1,2,2)
-        Rd1k(k,1,1) =  Rdiff(km1,1,1) + a11 * b11 + a12 * b21
-        Rd1k(k,1,2) =  Rdiff(km1,1,2) + a11 * b12 + a12 * b22
-        Rd1k(k,2,1) =  Rdiff(km1,2,1) + a21 * b11 + a22 * b21
-        Rd1k(k,2,2) =  Rdiff(km1,2,2) + a21 * b12 + a22 * b22
+      TT(:,:) = E(:,:) - matmul(Rdiff(km1,:,:),Rst1k(km1,:,:))
+      TT(:,:) = matinv2(TT(:,:))
+
+      CC(:,:) = matmul(Tdiff(km1,:,:),Rst1k(km1,:,:))
+      CC(:,:) = matmul(CC(:,:),TT(:,:))
+
+      DD(:) = Rdir(km1,:)*T(km1) + matmul(Rdiff(km1,:,:),T1k(km1,:))
+
+      T1k(k,:) = Tdir(km1,:)*T(km1) + matmul(Tdiff(km1,:,:), T1k(km1,:)) + matmul(CC(:,:),DD(:))
+
+      Rst1k(k,:,:) = Rdiff(km1,:,:) + matmul(CC(:,:),Tdiff(km1,:,:))
+
     end do
   
-
     do l = nlay, 1, -1
       lp1 = l + 1
-        c11              =  1.0d0 - Rst1k(lp1,1,1) * Rdiff(l,1,1) - Rst1k(lp1,1,2) * Rdiff(l,2,1)
-        c12              =      - Rst1k(lp1,1,1) * Rdiff(l,1,2) - Rst1k(lp1,1,2) * Rdiff(l,2,2)
-        c21              =      - Rst1k(lp1,2,1) * Rdiff(l,1,1) - Rst1k(lp1,2,2) * Rdiff(l,2,1)
-        c22              =  1.0d0 - Rst1k(lp1,2,1) * Rdiff(l,1,2) - Rst1k(lp1,2,2) * Rdiff(l,2,2)
-        pmod             =  c11 * c22 - c12 * c21
-        t11              =  c22 / pmod
-        t12              = -c12 / pmod
-        t21              = -c21 / pmod
-        t22              =  c11 / pmod
-        d1               =  R1k(lp1,1) * dtr(l) + Rst1k(lp1,1,1) * Tdir(l,1) + &
-                            Rst1k(lp1,1,2) * Tdir(l,2)
-        d2               =  R1k(lp1,2) * dtr(l) + Rst1k(lp1,2,1) * Tdir(l,1) + &
-                            Rst1k(lp1,2,2) * Tdir(l,2)
-        uu1              =  d1 * t11 + d2 * t12
-        uu2              =  d1 * t21 + d2 * t22
-        R1k(l,1)   =  Rdir(l,1) + uu1 * Tdiff(l,1,1) + uu2 * Tdiff(l,1,2)
-        R1k(l,2)   =  Rdir(l,2) + uu1 * Tdiff(l,2,1) + uu2 * Tdiff(l,2,2)
-!
-        c11              =  1.0d0 - Rdiff(l,1,1) * Rst1k(lp1,1,1) - Rdiff(l,1,2) * Rst1k(lp1,2,1)
-        c12              =      - Rdiff(l,1,1) * Rst1k(lp1,1,2) - Rdiff(l,1,2) * Rst1k(lp1,2,2)
-        c21              =      - Rdiff(l,2,1) * Rst1k(lp1,1,1) - Rdiff(l,2,2) * Rst1k(lp1,2,1)
-        c22              =  1.0d0 - Rdiff(l,2,1) * Rst1k(lp1,1,2) - Rdiff(l,2,2) * Rst1k(lp1,2,2)
-        pmod             =  c11 * c22 - c12 * c21
-        t11              =  c22 / pmod
-        t12              = -c12 / pmod
-        t21              = -c21 / pmod
-        t22              =  c11 / pmod
-!
-        r11              =  Tdiff(l,1,1) * (t11 * Rst1k(lp1,1,1) +  t21 * Rst1k(lp1,1,2)) + &
-                           & Tdiff(l,1,2) * (t11 * Rst1k(lp1,2,1) +  t21 * Rst1k(lp1,2,2))
-        r12              =  Tdiff(l,1,1) * (t12 * Rst1k(lp1,1,1) +  t22 * Rst1k(lp1,1,2)) + &
-                          & Tdiff(l,1,2) * (t12 * Rst1k(lp1,2,1) +  t22 * Rst1k(lp1,2,2))
-        r21              =  Tdiff(l,2,1) * (t11 * Rst1k(lp1,1,1) +  t21 * Rst1k(lp1,1,2)) + &
-                          &  Tdiff(l,2,2) * (t11 * Rst1k(lp1,2,1) +  t21 * Rst1k(lp1,2,2))
-        r22              =  Tdiff(l,2,1) * (t12 * Rst1k(lp1,1,1) +  t22 * Rst1k(lp1,1,2)) + &
-                          &  Tdiff(l,2,2) * (t12 * Rst1k(lp1,2,1) +  t22 * Rst1k(lp1,2,2))
-!
-        Rst1k(l,1,1) =  Rdiff(l,1,1) + r11 * Tdiff(l,1,1) + r12 * Tdiff(l,2,1)
-        Rst1k(l,1,2) =  Rdiff(l,1,2) + r11 * Tdiff(l,1,2) + r12 * Tdiff(l,2,2)
-        Rst1k(l,2,1) =  Rdiff(l,2,1) + r21 * Tdiff(l,1,1) + r22 * Tdiff(l,2,1)
-        Rst1k(l,2,2) =  Rdiff(l,2,2) + r21 * Tdiff(l,1,2) + r22 * Tdiff(l,2,2)
+
+      TT(:,:) = E(:,:) - matmul(RbkN(lp1,:,:),Rdiff(l,:,:))
+      TT(:,:) = matinv2(TT(:,:))
+
+      CC(:,:) = matmul(Tdiff(l,:,:),TT(:,:))
+
+      DD(:) = RkN(lp1,:)*dtr(l) + matmul(RbkN(lp1,:,:),Tdir(l,:))
+      DD(:) = matmul(CC(:,:),DD(:))
+
+      RkN(l,:) = Rdir(l,:) + matmul(CC(:,:), DD(:))
+
+      CC(:,:) = matmul(CC(:,:),RbkN(lp1,:,:))
+
+      RbkN(l,:,:) = Rdiff(l,:,:) + matmul(CC(:,:),Tdiff(l,:,:))
+
     end do
 
     do k = 1, nlev
-        c11              =  1.0d0 - Rst1k(k,1,1) * Rd1k(k,1,1) - Rst1k(k,1,2) * Rd1k(k,2,1)
-        c12              =      - Rst1k(k,1,1) * Rd1k(k,1,2) - Rst1k(k,1,2) * Rd1k(k,2,2)
-        c21              =      - Rst1k(k,2,1) * Rd1k(k,1,1) - Rst1k(k,2,2) * Rd1k(k,2,1)
-        c22              =  1.0d0 - Rst1k(k,2,1) * Rd1k(k,1,2) - Rst1k(k,2,2) * Rd1k(k,2,2)
-        pmod             =  c11 * c22 - c12 * c21
-        t11              =  c22 / pmod
-        t12              = -c12 / pmod
-        t21              = -c21 / pmod
-        t22              =  c11 / pmod
-!
-        d1               =  R1k(k,1) * scumdtr(k) + Rst1k(k,1,1) * T1k(k,1) + &
-                           & Rst1k(k,1,2) * T1k(k,2)
-        d2               =  R1k(k,2) * scumdtr(k) + Rst1k(k,2,1) * T1k(k,1) + &
-                           & Rst1k(k,2,2) * T1k(k,2)
-        uu1              =  d1 * t11 + d2 * t12
-        du1              =  T1k(k,1) + Rd1k(k,1,1) * uu1 + Rd1k(k,1,2) * (d1 * t21 + d2 * t22)
-        reflt(k)   =  uu1
-        trant(k)   =  du1 + scumdtr(k)
+
+      TT(:,:) = E(:,:) - matmul(RbkN(k,:,:),Rst1k(k,:,:))
+      TT(:,:) = matinv2(TT(:,:))
+
+      DD(:) = RkN(k,:)*T(k) + matmul(RbkN(k,:,:),T1k(k,:))
+
+      U(k,:) = matmul(TT(:,:),DD(:))
+
+      D(k,:) = T1k(k,:) + matmul(Rst1k(k,:,:),U(k,:))
 
     end do
 
     !! Down and up fluxes are multiplied by the incident flux
     !! up is defined as negative in the adding method, so we make it positive here
-    sw_down(:) = trant(:)*mu_z*Finc
-    sw_up(:) = -reflt(:)*mu_z*Finc
+    sw_down(:) = (D(:,1) + T(:))*mu_z*Finc
+    sw_up(:) = -U(:,1)*mu_z*Finc
 
   end subroutine sw_SDA
 
@@ -698,6 +634,23 @@ contains
     end if
 
   end subroutine bezier_interp
+
+  pure function matinv2(A) result(B)
+    !! Performs a direct calculation of the inverse of a 2×2 matrix.
+    real(dp), intent(in) :: A(2,2)   !! Matrix
+    real(dp)             :: B(2,2)   !! Inverse matrix
+    real(dp)             :: detinv
+
+    ! Calculate the inverse determinant of the matrix
+    detinv = 1.0_dp/(A(1,1)*A(2,2) - A(1,2)*A(2,1))
+
+    ! Calculate the inverse of the matrix
+    B(1,1) = detinv * A(2,2)
+    B(2,1) = -detinv * A(2,1)
+    B(1,2) = -detinv * A(1,2)
+    B(2,2) = detinv * A(1,1)
+
+  end function matinv2  
 
   pure function matinv4(A) result(B)
     !! Performs a direct calculation of the inverse of a 4×4 matrix.

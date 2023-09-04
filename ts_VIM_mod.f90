@@ -651,10 +651,8 @@ contains
     !! We now have the transmission and reflection coefficents for both the direct and diffuse components
     !! Now we perform the doubling-adding method accros multiple layers
 
-    !! Here we directly copy the code from J. Li 
-    !! we can probably make an improvement on this at some point through vectorisation
-
     !! Do boundary conditons first
+
     ! Upper
     T1k(1,:) = 0.0_dp
     Rst1k(1,:,:) = 0.0_dp
@@ -759,13 +757,13 @@ contains
     dy = yi(2) - yi(1)
     dy1 = yi(3) - yi(2)
 
-    if (x > xi(1) .and. x < xi(2)) then
+    if ((x > xi(1)) .and. (x < xi(2))) then
       ! left hand side interpolation
       !print*,'left'
       wh = dx1/(dx + dx1)
       wlim = 1.0_dp + 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+      if ((wh <= min(wlim,wlim1)) .or. (wh >= max(wlim,wlim1))) then
         wh = 1.0_dp
       end if
       yc = yi(2) - dx/2.0_dp * (wh*dy/dx + (1.0_dp - wh)*dy1/dx1)
@@ -777,7 +775,7 @@ contains
       wh = dx/(dx + dx1)
       wlim = 1.0_dp/(1.0_dp - (dy1/dy) * (dx/dx1))
       wlim1 = 1.0_dp + 1.0_dp/(1.0_dp - (dy/dy1) * (dx1/dx))
-      if (wh <= min(wlim,wlim1) .or. wh >= max(wlim,wlim1)) then
+      if ((wh <= min(wlim,wlim1)) .or. (wh >= max(wlim,wlim1))) then
         wh = 1.0_dp
       end if
       yc = yi(2) + dx1/2.0_dp * (wh*dy1/dx1 + (1.0_dp - wh)*dy/dx)
@@ -805,7 +803,7 @@ contains
   end function matinv2
 
   pure function matinv4(A) result(B)
-  !! Performs a direct calculation of the inverse of a 4×4 matrix.
+    !! Performs a direct calculation of the inverse of a 4×4 matrix.
     real(dp), intent(in) :: A(4,4)   !! Matrix
     real(dp)             :: B(4,4)   !! Inverse matrix
     real(dp)             :: detinv, s0, s1, s2, s3, s4, s5, c5, c4, c3, c2, c1, c0
