@@ -611,7 +611,7 @@ contains
       !! Multiply the AA12 and H2 matrix
       AA12H1(:) = matmul(AA12(:,:),H1(:))
 
-      !! Firect flux component - now we have the flux array (F(1)(2) = neg flux at lower,F(3)(4) = pos flux at upper)
+      !! Direct flux component - now we have the flux array (F(1)(2) = neg flux at lower,F(3)(4) = pos flux at upper)
       Fdir(:) = AA12H1(:) + H2(:)
 
       !! Store the direct beam reflection and transmission for this layer - normalised by the beam flux (=1 here)

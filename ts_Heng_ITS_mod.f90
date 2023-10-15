@@ -259,10 +259,12 @@ contains
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down
 
-    integer :: k
+    integer :: k, ki
     real(dp), dimension(nlay) :: chi, eta, phi, zetap, zetam
     real(dp), dimension(nlay) :: dtau, T,  E, Gp, Gm
     real(dp), dimension(nlev) :: Fbeam
+    real(dp), dimension(nlay,2,2) :: A, B, C
+    real(dp), dimension(nlay,2) :: X, D
 
     !! If zero albedo across all atmospheric layers then return direct beam only
     if (all(w0(:) <= 1.0e-6_dp)) then
@@ -304,13 +306,46 @@ contains
       & ((w0(:)*g0(:))/(2.0_dp*e2*E(:)*(1.0_dp - w0(:)*g0(:)))))
 
     !! Find upward and downward scattered fluxes
-    do k = 1, nlay
-      sw_up(k) = 1.0_dp/chi(k) * (phi(k)*Gp(k)*Fbeam(k+1) - (eta(k)*Gm(k) + chi(k)*Gp(k))*Fbeam(k))
-      sw_down(k) = Fbeam(k) + 1.0_dp/chi(k) * (phi(k)*Gm(k)*Fbeam(k) - (eta(k)*Gp(k) + chi(k)*Gm(k))*Fbeam(k+1))
-    end do
+    ! do k = 1, nlay
+    !   sw_up(k) = 1.0_dp/chi(k) * (phi(k)*Gp(k)*Fbeam(k+1) - (eta(k)*Gm(k) + chi(k)*Gp(k))*Fbeam(k))
+    !   sw_down(k) = Fbeam(k) + 1.0_dp/chi(k) * (phi(k)*Gm(k)*Fbeam(k) - (eta(k)*Gp(k) + chi(k)*Gm(k))*Fbeam(k+1))
+    ! end do
 
-    sw_down(nlev) = Fbeam(nlev) 
-    sw_up(nlev) = w_surf*sw_down(nlev)
+    ! sw_down(nlev) = Fbeam(nlev) 
+    ! sw_up(nlev) = w_surf*sw_down(nlev)
+
+    !! Perform matrix inversion - 
+    !! we need to reverse indexes for the matrix representation from Deitrick et al. (2022)
+
+    !! Boundary conditions for BOA
+    A(1,:,:) = 0.0_dp
+
+    B(1,1,1) = 1.0_dp ; B(1,2,1) = -1.0_dp
+    B(1,2,1) = eta(nlay) ; B(1,2,2) = chi(nlay)
+
+    C(1,1,1) = 0.0_dp ; C(1,2,1) = -0.0_dp
+    C(1,2,1) = 0.0_dp ; C(1,2,2) = -phi(nlay)
+
+    D(1,1) = Fbeam(nlev)
+    D(1,2) = phi(nlay)*Gm(nlay)*Fbeam(nlay) - (eta(nlay)*Gp(nlay) + chi(nlay)*Gm(nlay))*Fbeam(nlev)
+
+    !! Now fill in the matrix coefficents for the block tridiagonal
+    do k = 2, nlay-1
+      ki = nlay - k + 1
+
+      A(k,1,1) = -phi(ki+1) ; A(k,1,2) = 0.0_dp
+      A(k,2,1) =  0.0_dp ; A(k,2,2) = 0.0_dp
+
+      B(k,1,1) = chi(ki+1) ; B(k,2,1) = eta(ki+1)
+      B(k,2,1) = eta(ki) ; B(k,2,2) = chi(ki)
+
+      C(k,1,1) =  0.0_dp ; C(k,1,2) = 0.0_dp
+      C(k,2,1) =  0.0_dp ; C(k,2,2) = -phi(ki)    
+      
+      D(k,1) = phi(ki+1)*Gm(ki+1)*Fbeam(ki) - (eta(nlay)*Gp(nlay) + chi(nlay)*Gm(nlay))*Fbeam(nlev)
+      D(k,2) = phi(nlay)*Gm(nlay)*Fbeam(nlay) - (eta(nlay)*Gp(nlay) + chi(nlay)*Gm(nlay))*Fbeam(nlev)
+
+    end do
 
 
   end subroutine sw_Heng_ITS

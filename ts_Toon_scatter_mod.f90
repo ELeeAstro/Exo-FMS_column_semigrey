@@ -150,14 +150,14 @@ contains
 
   end subroutine ts_Toon_scatter
 
-  subroutine lw_Toon(nlay, nlev, be, tau_IR1, w01, gin, rsurf, lw_up, lw_down)
+  subroutine lw_Toon(nlay, nlev, be, tau_IR_in, w0_in, g_in, rsurf, lw_up, lw_down)
     implicit none
 
     !! Input
     integer, intent(in) :: nlay, nlev
     real(dp), intent(in) :: rsurf
-    real(dp), dimension(nlev), intent(in) :: tau_IR1, be
-    real(dp), dimension(nlay), intent(in) :: w01, gin
+    real(dp), dimension(nlev), intent(in) :: tau_IR_in, be
+    real(dp), dimension(nlay), intent(in) :: w0_in, g_in
 
     !! Output
     real(dp), dimension(nlev), intent(out) :: lw_up, lw_down
@@ -168,7 +168,7 @@ contains
     integer :: l, lm2, lm1
     real(dp) :: Bsurf, Btop, bottom, tautop
     real(dp), dimension(nlev) :: tau_IR
-    real(dp), dimension(nlay) :: dtau1, dtau
+    real(dp), dimension(nlay) :: dtau_in, dtau
     real(dp), dimension(nlay) :: w0, hg
     real(dp), dimension(nlay) :: B0, B1
     real(dp), dimension(nlay) :: lam, gam, alp, term
@@ -177,7 +177,7 @@ contains
     real(dp), dimension(nlay+nlay) :: Af, Bf, Cf, Df, xkk
     real(dp), dimension(nlay) :: xk1, xk2
 
-    real(dp), dimension(nlay) :: alphax, g, h, xj, xk
+    real(dp), dimension(nlay) :: g, h, xj, xk
     real(dp), dimension(nlay) :: alpha1, alpha2, sigma1, sigma2
     real(dp), dimension(nlay) :: em1, obj, epp, obj2, epp2, em2, em3
 
@@ -185,16 +185,16 @@ contains
 
     l = nlay + nlay
     lm2 = l - 2
-    lm1 = l -1
+    lm1 = l - 1
 
     do k = 1, nlay
-      dtau1(k) = max(tau_IR1(k+1) - tau_IR1(k),1e-5_dp)
+      dtau_in(k) = max(tau_IR_in(k+1) - tau_IR_in(k),1e-6_dp)
     end do
 
     ! Delta eddington scaling
-    w0(:) = (1.0_dp - gin(:)**2)*w01(:)/(1.0_dp-w01(:)*gin(:)**2)
-    dtau(:) = (1.0_dp-w01(:)*gin(:)**2)*dtau1(:)
-    hg(:) = gin(:)/(1.0_dp + gin(:))
+    w0(:) = (1.0_dp - g_in(:)**2)*w0_in(:)/(1.0_dp - w0_in(:)*g_in(:)**2)
+    dtau(:) = (1.0_dp - w0_in(:)*g_in(:)**2)*dtau_in(:)
+    hg(:) = g_in(:)/(1.0_dp + g_in(:))
 
     tau_IR(1) = 0.0_dp
     do k = 1, nlay
@@ -202,12 +202,12 @@ contains
     end do
 
     alp(:) = sqrt((1.0_dp - w0(:))/(1.0_dp - w0(:)*hg(:)))
-    lam(:) = alp(:)*(1.0_dp-w0(:)*hg(:))/ubari
-    gam(:) = (1.0_dp-alp(:))/(1.0_dp+alp(:))
-    term(:) = ubari/(1.0_dp-w0(:)*hg(:))
+    lam(:) = alp(:)*(1.0_dp - w0(:)*hg(:))/ubari
+    gam(:) = (1.0_dp - alp(:))/(1.0_dp + alp(:))
+    term(:) = ubari/(1.0_dp - w0(:)*hg(:))
 
     do k = 1, nlay
-      if (dtau(k) < 3e-6_dp) then
+      if (dtau(k) < 1e-6_dp) then
         ! For low optical depths use the isothermal approimation
         B1(k) = 0.0_dp
         B0(k) = 0.5_dp*(be(k+1) + be(k))
@@ -221,11 +221,11 @@ contains
     Cpm1(:) = B0(:) + B1(:)*term(:)
     Cmm1(:) = B0(:) - B1(:)*term(:)
     !Cp and Cm are the C+ and C- terms evaluated at the bottom of the layer.
-    Cp(:) = B0(:) + B1(:)*dtau(:)+B1(:)*term(:)
-    Cm(:) = B0(:) + B1(:)*dtau(:)-B1(:)*term(:)
+    Cp(:) = B0(:) + B1(:)*dtau(:) + B1(:)*term(:)
+    Cm(:) = B0(:) + B1(:)*dtau(:) - B1(:)*term(:)
 
     tautop = dtau(1)*exp(-1.0_dp)
-    Btop = (1.0_dp-exp(-tautop/ubari))*be(1)
+    Btop = (1.0_dp - exp(-tautop/ubari))*be(1)
     Bsurf = be(nlev)
     bottom = Bsurf + B1(nlay)*ubari
 
@@ -248,16 +248,16 @@ contains
     n = 0
     do i = 2, lm2, 2
       n = n + 1
-      Af(i) = (E1(n)+E3(n))*(gam(n+1)-1.0_dp)
-      Bf(i) = (E2(n)+E4(n))*(gam(n+1)-1.0_dp)
-      Cf(i) = 2.0_dp*(1.0_dp-gam(n+1)**2)
-      Df(i) = (gam(n+1)-1.0_dp)*(Cpm1(n+1) - Cp(n)) + (1.0_dp-gam(n+1))*(Cm(n)-Cmm1(n+1))
+      Af(i) = (E1(n)+E3(n))*(gam(n+1) - 1.0_dp)
+      Bf(i) = (E2(n)+E4(n))*(gam(n+1) - 1.0_dp)
+      Cf(i) = 2.0_dp*(1.0_dp - gam(n+1)**2)
+      Df(i) = (gam(n+1) - 1.0_dp)*(Cpm1(n+1) - Cp(n)) + (1.0_dp - gam(n+1))*(Cm(n) - Cmm1(n+1))
     end do
 
     n = 0
     do i = 3, lm1, 2
       n = n + 1
-      Af(i) = 2.0_dp*(1.0_dp-gam(n)**2)
+      Af(i) = 2.0_dp*(1.0_dp - gam(n)**2)
       Bf(i) = (E1(n)-E3(n))*(1.0_dp + gam(n+1))
       Cf(i) = (E1(n)+E3(n))*(gam(n+1)-1.0_dp)
       Df(i) = E3(n)*(Cpm1(n+1) - Cp(n)) + E1(n)*(Cm(n) - Cmm1(n+1))
@@ -276,8 +276,8 @@ contains
     call dtridgl(l, Af, Bf, Cf, Df, xkk)
 
     do n = 1, nlay
-      xk1(n) = xkk(2*n-1)+xkk(2*n)
-      xk2(n) = xkk(2*n-1)-xkk(2*n)
+      xk1(n) = xkk(2*n-1) + xkk(2*n)
+      xk2(n) = xkk(2*n-1) - xkk(2*n)
       if (xk2(n) == 0.0_dp) then
         cycle
       end if
@@ -297,32 +297,29 @@ contains
     ! end do
     ! stop
 
-    do k = 1, nlay
-      if (w0(k) <= 0.01_dp) then
-        g(k) = 0.0_dp
-        h(k) = 0.0_dp
-        xj(k) = 0.0_dp
-        xk(k) = 0.0_dp
-        alpha1(k)=twopi*B0(k)
-        alpha2(k)=twopi*B1(k)
-        sigma1(k)=alpha1(k)
-        sigma2(k)=alpha2(k)
-      else
-        alphax(k)=sqrt((1.0_dp-w0(k))/(1.0_dp-w0(k)*hg(k)))
-        g(k)=twopi*w0(k)*xk1(k)*(1.0_dp+hg(k)*alphax(k))/(1.0_dp+alphax(k))
-        h(k)=twopi*w0(k)*xk2(k)*(1.0_dp-hg(k)*alphax(k))/(1.0_dp+alphax(k))
-        xj(k)=twopi*w0(k)*xk1(k)*(1.0_dp-hg(k)*alphax(k))/(1.0_dp+alphax(k))
-        xk(k)=twopi*w0(k)*xk2(k)*(1.0_dp+hg(k)*alphax(k))/(1.0_dp+alphax(k))
-        alpha1(k)=twopi*(B0(k)+B1(k)*(ubari*w0(k)*hg(k)/(1.0_dp-w0(k)*hg(k))))
-        alpha2(k)=twopi*B1(k)
-        sigma1(k)=twopi*(B0(k)-B1(k)*(ubari*w0(k)*hg(k)/(1.0_dp-w0(k)*hg(k))))
-        sigma2(k)=alpha2(k)
-      end if
-    end do
+    where (w0(:) <= 0.01_dp)
+      g(:) = 0.0_dp
+      h(:) = 0.0_dp
+      xj(:) = 0.0_dp
+      xk(:) = 0.0_dp
+      alpha1(:)=twopi*B0(:)
+      alpha2(:)=twopi*B1(:)
+      sigma1(:)=alpha1(:)
+      sigma2(:)=alpha2(:)
+    elsewhere 
+      g(:)=twopi*w0(:)*xk1(:)*(1.0_dp+hg(:)*alp(:))/(1.0_dp+alp(:))
+      h(:)=twopi*w0(:)*xk2(:)*(1.0_dp-hg(:)*alp(:))/(1.0_dp+alp(:))
+      xj(:)=twopi*w0(:)*xk1(:)*(1.0_dp-hg(:)*alp(:))/(1.0_dp+alp(:))
+      xk(:)=twopi*w0(:)*xk2(:)*(1.0_dp+hg(:)*alp(:))/(1.0_dp+alp(:))
+      alpha1(:)=twopi*(B0(:)+B1(:)*(ubari*w0(:)*hg(:)/(1.0_dp-w0(:)*hg(:))))
+      alpha2(:)=twopi*B1(:)
+      sigma1(:)=twopi*(B0(:)-B1(:)*(ubari*w0(:)*hg(:)/(1.0_dp-w0(:)*hg(:))))
+      sigma2(:)=alpha2(:)
+    end where
 
     obj(:) = min(lam(:)*dtau(:),35.0_dp)
-    em1(:) = exp(-obj(:))
     epp(:) = exp(obj(:))
+    em1(:) = 1.0_dp/epp(:)
     obj2(:) = min(0.5_dp*lam(:)*dtau(:),35.0_dp)
     epp2(:) = exp(obj2(:))
 
@@ -362,14 +359,14 @@ contains
 
   end subroutine lw_Toon
 
-  subroutine sw_Toon(nlay, nlev, Finc, tau_V1, mu_z, w01, gin, rsurf, sw_down, sw_up)
+  subroutine sw_Toon(nlay, nlev, Finc, tau_V_in, mu_z, w0_in, g_in, rsurf, sw_down, sw_up)
     implicit none
 
     !! Input
     integer, intent(in) :: nlay, nlev
     real(dp), intent(in) :: Finc, rsurf
-    real(dp), dimension(nlev), intent(in) :: tau_V1, mu_z
-    real(dp), dimension(nlay), intent(in) :: w01, gin
+    real(dp), dimension(nlev), intent(in) :: tau_V_in, mu_z
+    real(dp), dimension(nlay), intent(in) :: w0_in, g_in
 
     !! Output
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down
@@ -378,11 +375,11 @@ contains
     integer :: k, i, n
     integer :: l, lm2, lm1
     real(dp) :: bsurf, btop
-    real(dp), dimension(nlev) :: direct, tau_V, cum_trans
-    real(dp), dimension(nlay) :: dtau1, dtau, mu_zm
+    real(dp), dimension(nlev) :: dir, tau_V, cum_trans
+    real(dp), dimension(nlay) :: dtau_in, dtau, mu_zm
     real(dp), dimension(nlay) :: w0, hg
     real(dp), dimension(nlay) :: g1, g2, g3, g4
-    real(dp), dimension(nlay) :: lam, gam, alp, denom
+    real(dp), dimension(nlay) :: lam, gam, denom
     real(dp), dimension(nlay) :: Am, Ap, Cpm1, Cmm1, Cp, Cm
     real(dp), dimension(nlay) :: exptrm, Ep, Em, E1, E2, E3, E4
     real(dp), dimension(nlay+nlay) :: Af, Bf, Cf, Df, xk
@@ -390,23 +387,24 @@ contains
 
     !! Optimisation Variables
     real(dp), dimension(nlay) :: opt1
-
+    real(dp), parameter :: sqrt3 = sqrt(3.0_dp)
+    real(dp), parameter :: sqrt3d2 = sqrt3/2.0_dp
 
     ! Surface 'emission' boundary fluxes (0 for shortwave)
     bsurf = 0.0_dp
     btop = 0.0_dp
 
     ! If zero albedo across all atmospheric layers then return direct beam only
-    if (all(w01(:) <= 1.0e-12_dp)) then
+    if (all(w0_in(:) <= 1.0e-12_dp)) then
 
       if (mu_z(nlev) == mu_z(1)) then
         ! No zenith correction, use regular method
-        sw_down(:) = Finc * mu_z(nlev) * exp(-tau_V1(:)/mu_z(nlev))
+        sw_down(:) = Finc * mu_z(nlev) * exp(-tau_V_in(:)/mu_z(nlev))
       else
         ! Zenith angle correction, use cumulative transmission function
-        cum_trans(1) = tau_V1(1)/mu_z(1)
+        cum_trans(1) = tau_V_in(1)/mu_z(1)
         do k = 1, nlev-1
-          cum_trans(k+1) = cum_trans(k) + (tau_V1(k+1) - tau_V1(k))/mu_z(k+1)
+          cum_trans(k+1) = cum_trans(k) + (tau_V_in(k+1) - tau_V_in(k))/mu_z(k+1)
         end do
         do k = 1, nlev
           sw_down(k) = Finc * mu_z(nlev) * exp(-cum_trans(k))
@@ -425,13 +423,13 @@ contains
     lm1 = l - 1
 
     do k = 1, nlay
-      dtau1(k) = max(tau_V1(k+1) - tau_V1(k),1e-5_dp)
+      dtau_in(k) = max(tau_V_in(k+1) - tau_V_in(k),1e-6_dp)
     end do
 
     ! Delta eddington scaling
-    w0(:) = ((1.0_dp - gin(:)**2)*w01(:))/(1.0_dp-w01(:)*gin(:)**2)
-    dtau(:) = (1.0_dp-w01(:)*gin(:)**2)*dtau1(:)
-    hg(:) = gin(:)/(1.0_dp + gin(:))
+    w0(:) = ((1.0_dp - g_in(:)**2)*w0_in(:))/(1.0_dp-w0_in(:)*g_in(:)**2)
+    dtau(:) = (1.0_dp-w0_in(:)*g_in(:)**2)*dtau_in(:)
+    hg(:) = g_in(:)/(1.0_dp + g_in(:))
 
     tau_V(1) = 0.0_dp
     do k = 1, nlay
@@ -440,7 +438,7 @@ contains
 
     if (mu_z(nlev) == mu_z(1)) then
       ! No zenith correction, use regular method
-      direct(:) = Finc * mu_z(nlev) * exp(-tau_V(:)/mu_z(nlev))
+      dir(:) = Finc * mu_z(nlev) * exp(-tau_V(:)/mu_z(nlev))
       mu_zm(:) = mu_z(nlev)
     else
       ! Zenith angle correction, use cumulative transmission function
@@ -449,22 +447,21 @@ contains
         cum_trans(k+1) = cum_trans(k) + (tau_V(k+1) - tau_V(k))/mu_z(k+1)
       end do
       do k = 1, nlev
-        direct(k) = Finc * mu_z(nlev) * exp(-cum_trans(k))
+        dir(k) = Finc * mu_z(nlev) * exp(-cum_trans(k))
       end do
       mu_zm(:) = (mu_z(1:nlay) + mu_z(2:nlev))/2.0_dp ! Zenith angle at midpoints
     end if
 
-    g1(:) = 0.86602540378_dp * (2.0_dp-w0(:)*(1.0_dp+hg(:)))
-    g2(:) = (1.7320508075688772_dp*w0(:)/2.0_dp) * (1.0_dp-hg(:))
+    g1(:) = sqrt3d2 * (2.0_dp-w0(:)*(1.0_dp+hg(:)))
+    g2(:) = (sqrt3d2*w0(:)) * (1.0_dp-hg(:))
     where (g2(:) == 0.0_dp)
       g2(:) = 1.0e-10_dp
     end where
-    g3(:) = (1.0_dp - 1.7320508075688772_dp*hg(:)*mu_zm(:))/2.0_dp
+    g3(:) = (1.0_dp - sqrt3*hg(:)*mu_zm(:))/2.0_dp
     g4(:) = 1.0_dp - g3(:)
 
     lam(:) = sqrt(g1(:)**2 - g2(:)**2)
     gam(:) = (g1(:) - lam(:))/g2(:)
-    alp(:) = sqrt((1.0_dp - w0(:))/(1.0_dp - w0(:)*hg(:)))
 
     denom(:) = lam(:)**2 - 1.0_dp/(mu_zm(:)**2)
     where (denom(:) == 0.0_dp)
@@ -540,7 +537,7 @@ contains
     sw_up(nlev) = xk1(nlay)*Ep(nlay)+gam(nlay)*xk2(nlay)*Em(nlay)+Cp(nlay)
     sw_down(nlev) = xk1(nlay)*Ep(nlay)*gam(nlay)+xk2(nlay)*Em(nlay)+Cm(nlay)
 
-    sw_down(:) = sw_down(:) + direct(:)
+    sw_down(:) = sw_down(:) + dir(:)
     sw_up(:) = sw_up(:)
 
   end subroutine sw_Toon
