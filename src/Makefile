@@ -41,9 +41,7 @@ OBJECTS = \
 	  ts_isothermal_2_mod.o \
 	  ts_Toon_mod.o \
     ts_Toon_scatter_mod.o \
-	  ts_Heng_ITS_mod.o \
 	  ts_short_char_mod_linear.o \
-		ts_short_char_mod_Bezier.o \
     ts_AA_E_mod.o \
 		ts_AA_L_mod.o \
 		ts_VIM_mod.o \
@@ -61,13 +59,13 @@ OBJECTS = \
 #		DISORT.o \
 
 # executable statement
-EXECS  = FMS_RC
+EXECS  = ../FMS_RC_sg
 
 .SUFFIXES: .o .f90 .F .f
 
-default: FMS_RC
+default: FMS_RC_sg
 
-FMS_RC:  $(OBJECTS)
+FMS_RC_sg:  $(OBJECTS)
 	 $(F90LINKER) $(LFLAGS) $(OBJECTS) -o $(EXECS)
 
 clean:

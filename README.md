@@ -22,25 +22,23 @@ The advantage of semi-grey scheme is that they are fast and produce relatively r
 Larger deviations to real gas typically occur at low pressure, where the cooling efficiencies are generally too low in the semi-grey framework, leading to highly isothermal upper atmospheres.
 
 To compile enter 'make' in the main directory. To remove compiled code enter 'make clean'. \
-Some compiler options for gfortran, nvfortran and ifort are provided in the makefile.
+Some compiler options for gfortran, nvfortran and intel are provided in the makefile.
 
 This code performs various 'two-stream' approaches from the literature in a semi-grey context:
 1. Isothermal layer approximation
 2. Toon89 method (Scattering and non-scattering versions)
-3. Short Characteristics method (w. linear and Bezier interpolants)
-4. Heng et al. method
-5. Neil Lewis's scattering code, following Pierrehumbert (2010)
-6. Mendonca et al. method
-7. Two-stream DISORT version (w. Tint modifications by Xianyu Tan)
-8. Absorption Approximation (AA), with exponential function (_E) or linear (_L)
-9. Variational Iteration Method (VIM), following Zhang et al. (2017)
+3. Short Characteristics method (w. linear interpolants)
+4. Neil Lewis's scattering code, following Pierrehumbert (2010)
+5. Two-stream DISORT version (w. Tint modifications by Xianyu Tan)
+6. Absorption Approximation (AA), with exponential function (_E) or linear (_L)
+7. Variational Iteration Method (VIM), following Zhang et al. (2017)
 
 You can also see the header comments in the source code for some additional information.
 
 For the shortwave fluxes: \
 Toon89 uses the Toon89 shortwave scheme (Toon et al. 1989) \
 AA_E, AA_L and VIM use the alpha-4SDA (4-stream Spherical Harmonic with Doubling-Adding) method (Zhang & Li 2013) \
-The rest use an approximate adding method (Mendonca et al. 2015 + references) 
+The rest use an approximate adding method (Mendonca et al. 2015 + references), feel free to try mixing and matching different shortwave and longwave routines to suit your specific needs.
 
 We detect if any albedo is present in the column, and perform the adding method to calculate the scattered flux, otherwise if there is no albedo only the direct beam is used.
 
@@ -59,10 +57,7 @@ ts_scheme: \
 'Toon' - Toon89 ts method without scattering \
 'Toon_scatter' - Toon89 ts method with scattering \
 'Shortchar_linear' - Short characteristics method  with linear interpolants \
-'Shortchar_Bezier' - Short characteristics method with Bezier interpolants \
-'Heng' - Heng et al. method \
 'Lewis_scatter' - Neil Lewis's scattering code, following Pierrehumbert (2010) \
-'Mendonca' - Mendonca et al. method \
 'Disort_scatter' - two-stream DISORT version with scattering \
 'AA_E' - Absorption Approximation with exponential Planck function \
 'AA_L' - Absorption Approximation with linear Planck function \
@@ -135,9 +130,9 @@ You will need to clean and recompile the code if these are changed.
 # Personal recommendations
 
 For non-scattering problems, we generally recommend that the AA_E method be used, as it is fast, efficient, very stable and also very accurate. 
-For shortwave scattering (and non-scattering) problems we recommend the alpha-4SDA method as included (or using the two-stream DISORT or Toon89 with scattering), alpha-4SDA method is generally fast and accurate (enough).
-For longwave scattering problems we recommend the VIM method for general use, as a fast and efficient method.
-If that fails we recommend the two-stream Toon or DISORT version, which are slower but may be more accurate in some circumstances.
+For shortwave scattering (and non-scattering) problems we recommend the alpha-4SDA method as included (or Toon89 with scattering), alpha-4SDA method is generally fast and accurate (enough).
+For longwave scattering problems we recommend the VIM or AA_E method for general use, as both are fast and efficient methods.
+If that fails we recommend the two-stream Toon89 method, which are slower but may be more accurate in some circumstances.
 
 For general use I suggest looking at the VIM module, since it uses alpha-4SDA (shortwave) and alpha-4VIM (longwave), both decent and fast approximation methods that include scattering.
 If speed with approximate scattering is super super important then use AA_E and swap the SDA method for the adding method.

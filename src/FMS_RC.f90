@@ -16,12 +16,9 @@ program Exo_FMS_RC
   use ts_isothermal_2_mod, only : ts_isothermal_2
   use ts_Toon_mod, only : ts_Toon
   use ts_Toon_scatter_mod, only : ts_Toon_scatter
-  use ts_Heng_ITS_mod, only : ts_Heng_ITS
   use ts_short_char_mod_linear, only : ts_short_char_linear
-  use ts_short_char_mod_Bezier, only : ts_short_char_Bezier
   use ts_AA_E_mod, only : ts_AA_E
   use ts_AA_L_mod, only : ts_AA_L
-  !use ts_PT_mod, only : ts_PT
   use ts_VIM_mod, only : ts_VIM
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
@@ -286,14 +283,6 @@ program Exo_FMS_RC
       ! Short characteristics method without LW scattering
       call ts_short_char_linear(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
       & mu_z_eff, F0, Tint, AB, sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
-    case('Shortchar_Bezier')
-      ! Short characteristics method without LW scattering
-      call ts_short_char_Bezier(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
-      & mu_z_eff, F0, Tint, AB, sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
-    case('Heng_ITS')
-      !! Heng et al. improved two stream method
-      call ts_Heng_ITS(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs) 
     case('Lewis_scatter')
       ! Neil Lewis's code with SW/LW scattering
       call ts_Lewis_scatter(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
@@ -309,11 +298,7 @@ program Exo_FMS_RC
     case('AA_L')
       ! Absorption Approximation (linear Planck function)
       call ts_AA_L(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)  
-    case('PT')
-      ! Perturbation theory with analytical LW scattering
-      ! call ts_PT(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      ! & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)          
+      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)          
     case('VIM')
       ! Variational Iteration Method with analytical LW scattering
       call ts_VIM(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &

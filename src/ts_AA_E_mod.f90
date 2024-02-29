@@ -137,14 +137,14 @@ contains
     integer :: k, m
     real(dp), dimension(nlay) :: w0, hg, fc
     real(dp), dimension(nlay) :: dtau, Bln, eps, dtau_a
-    real(dp), dimension(nmu, nlay) :: T, nup, nun
-    real(dp), dimension(nmu, nlev) :: lw_up_g, lw_down_g
+    real(dp), dimension(nlay) :: T, nup, nun
+    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
     real(dp), dimension(nlay) :: sigma_sq, pmom2, c
     integer, parameter :: nstr = nmu*2
 
     !! Calculate dtau in each layer
-    dtau(:) = tau_IRe(2:) - tau_IRe(1:nlay)
+    dtau(:) = tau_IRe(2:nlev) - tau_IRe(1:nlay)
 
     !! Delta-M+ scaling (Following DISORT: Lin et al. 2018)
     !! Assume HG phase function for scaling
@@ -167,15 +167,11 @@ contains
     hg(:) = gg(:)
 
     !! Log B with tau function
-    do k = 1, nlay
-      if (dtau(k) < 1.0e-9_dp) then
-        ! Too low optical depth for numerical stability, Bln = 0
-        Bln(k) = 0.0_dp
-      else
-        ! Log B with tau value
-        Bln(k) = log(be(k+1)/be(k))/dtau(k)
-      end if
-    end do
+    where (dtau(:) < 1.0e-9_dp)
+      Bln(:) = 0.0_dp
+    elsewhere
+      Bln(:) = log(be(2:nlev)/be(1:nlay))/dtau(:)
+    end where
 
     !! modified co-albedo epsilon
     eps(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
@@ -191,42 +187,39 @@ contains
     !! Start loops to integrate in mu space
     do m = 1, nmu
 
+      !! Efficency variables
+      T(:) = exp(-dtau_a(:)/uarr(m))
+      nup(:) = 1.0_dp/(1.0_dp + uarr(m)*Bln(:)/eps(:))
+      nun(:) = 1.0_dp/(1.0_dp - uarr(m)*Bln(:)/eps(:))
+
       !! Begin two-stream loops
       !! Perform downward loop first - also calculate efficency variables
       ! Top boundary condition - 0 flux downward from top boundary
-      lw_down_g(m,1) = 0.0_dp
+      lw_down_g(1) = 0.0_dp
       do k = 1, nlay
-
-        !! Efficency variables
-        T(m,k) = exp(-dtau_a(k)/uarr(m))
-        nup(m,k) = 1.0_dp/(1.0_dp + uarr(m)*Bln(k)/eps(k))
-        nun(m,k) = 1.0_dp/(1.0_dp - uarr(m)*Bln(k)/eps(k))
-
-        lw_down_g(m,k+1) = lw_down_g(m,k)*T(m,k) + &
-          & nup(m,k) * (be(k+1) - be(k)*T(m,k))
-          !print*, k, m, lw_down_g(k+1), alkap(k), (be(k) - alkap(k)*uarr(m))*exp(-dtau_a(k)/uarr(m))
+        lw_down_g(k+1) = lw_down_g(k)*T(k) + &
+          & nup(k) * (be(k+1) - be(k)*T(k))
       end do
-
 
       !! Perform upward loop
       if (surf .eqv. .True.) then
         ! Surface boundary condition given by surface temperature + reflected longwave radiaiton
-        lw_up_g(m,nlev) = lw_down_g(m,nlev)*lw_a_surf + be_int
+        lw_up_g(nlev) = lw_down_g(nlev)*lw_a_surf + be_int
       else
         ! Lower boundary condition - internal heat definition Fint = F_down - F_up
         ! here the lw_a_surf is assumed to be = 1 as per the definition
         ! here we use the same condition but use intensity units to be consistent
-        lw_up_g(m,nlev) = lw_down_g(m,nlev) + be_int
+        lw_up_g(nlev) = lw_down_g(nlev) + be_int
       end if
 
       do k = nlay, 1, -1
-        lw_up_g(m,k) = lw_up_g(m,k+1)*T(m,k) + &
-          & nun(m,k) * (be(k) - be(k+1)*T(m,k))
+        lw_up_g(k) = lw_up_g(k+1)*T(k) + &
+          & nun(k) * (be(k) - be(k+1)*T(k))
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      lw_down(:) = lw_down(:) + lw_down_g(m,:) * wuarr(m)
-      lw_up(:) = lw_up(:) + lw_up_g(m,:) * wuarr(m)
+      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
+      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
 
     end do
 

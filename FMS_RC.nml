@@ -3,13 +3,13 @@
 
 &FMS_RC_nml
 
-ts_scheme = 'Toon_scatter'
+ts_scheme = 'AA_E'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 
 nlay = 54
-a_sh = 'Hybrid_sigma_grid_a_54.txt'
-b_sh = 'Hybrid_sigma_grid_b_54.txt'
+a_sh = 'hybrid_sigma/Hybrid_sigma_grid_a_54.txt'
+b_sh = 'hybrid_sigma/Hybrid_sigma_grid_b_54.txt'
 
 pref = 1e8
 
@@ -33,10 +33,10 @@ met = 0.0
 ns = 1.0
 nl = 1.0
 
-sw_ac = 0.8
-sw_gc = 0.8
-lw_ac = 0.8
-lw_gc = 0.8
+sw_ac = 0.0
+sw_gc = 0.0
+lw_ac = 0.0
+lw_gc = 0.0
 
 zcorr = .False.
 zcorr_meth = 2

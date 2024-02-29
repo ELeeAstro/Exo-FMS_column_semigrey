@@ -39,8 +39,6 @@ contains
     integer :: i
     real(dp), dimension(nlev) :: Te
 
-    real(dp) :: start, end
-
     !! Conversion arrays from FMS to DISORT dimensions and work variables
     integer, parameter :: maxcly=200, maxulv=201
     real(dp), dimension(0:maxcly) :: Te_0
