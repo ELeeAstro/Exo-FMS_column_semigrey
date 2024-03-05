@@ -3,9 +3,9 @@
 
 &FMS_RC_nml
 
-ts_scheme = 'AA_E'
+ts_scheme = 'SH_4'
 opac_scheme = 'Constant'
-adj_scheme = 'Ray_dry'
+adj_scheme = 'Dry_Ray'
 
 nlay = 54
 a_sh = 'hybrid_sigma/Hybrid_sigma_grid_a_54.txt'
@@ -14,7 +14,7 @@ b_sh = 'hybrid_sigma/Hybrid_sigma_grid_b_54.txt'
 pref = 1e8
 
 t_step = 60.0
-nstep = 1000000
+nstep = 100000
 Rd_air = 3556.8
 cp_air = 1.3e4
 grav = 10.0
@@ -35,8 +35,8 @@ nl = 1.0
 
 sw_ac = 0.0
 sw_gc = 0.0
-lw_ac = 0.0
-lw_gc = 0.0
+lw_ac = 0.5
+lw_gc = 0.5
 
 zcorr = .False.
 zcorr_meth = 2

@@ -6,8 +6,8 @@
 F90          = gfortran
 F90LINKER    = gfortran
 DEFS      =
-#FFLAGS   	= -Og -pipe -g -fbacktrace -Wall -Wextra -pedantic -fcheck=all -Wconversion -fbounds-check -ffpe-trap=invalid
-FFLAGS   = -O3 -pipe
+FFLAGS   	= -Og -pipe -g -fbacktrace -Wall -Wextra -pedantic -fcheck=all -Wconversion -fbounds-check -ffpe-trap=invalid -llapack
+#FFLAGS   = -O3 -pipe -llapack
 INCLUDES  =
 LFLAGS    = $(FFLAGS)
 
@@ -47,6 +47,8 @@ OBJECTS = \
 		ts_VIM_mod.o \
     ts_Lewis_scatter_mod.o \
 		ts_disort_scatter_mod.o \
+		ts_SH_2_mod.o \
+		ts_SH_4_mod.o \
     FMS_RC.o
 
 #		ts_Heng_ITS_mod.o \

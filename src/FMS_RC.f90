@@ -22,6 +22,8 @@ program Exo_FMS_RC
   use ts_VIM_mod, only : ts_VIM
   use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
   use ts_disort_scatter_mod, only : ts_disort_scatter
+  use ts_SH_2_mod, only : ts_SH_2
+  use ts_SH_4_mod, only : ts_SH_4
   use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
   use IC_mod, only : IC_profile
   use dry_conv_adj_mod, only : Ray_dry_adj
@@ -278,32 +280,38 @@ program Exo_FMS_RC
     case("Toon_scatter")
       ! Toon method with SW/LW scattering
       call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr)
+        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr)
     case('Shortchar_linear')
       ! Short characteristics method without LW scattering
       call ts_short_char_linear(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
-      & mu_z_eff, F0, Tint, AB, sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
+        & mu_z_eff, F0, Tint, AB, sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
     case('Lewis_scatter')
       ! Neil Lewis's code with SW/LW scattering
       call ts_Lewis_scatter(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
+        & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     case('Disort_scatter')
       ! Two-stream DISORT version (with SW/LW scattering)
       call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
+        & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
     case('AA_E')
       ! Absorption Approximation (exoponential Planck function)
       call ts_AA_E(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)   
+        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)   
     case('AA_L')
       ! Absorption Approximation (linear Planck function)
       call ts_AA_L(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)          
+        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)          
     case('VIM')
       ! Variational Iteration Method with analytical LW scattering
       call ts_VIM(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-      & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs) 
-    case('None')
+        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs) 
+    case('SH_2')
+      call ts_SH_2(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
+        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
+    case('SH_4')
+      call ts_SH_4(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
+        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
+      case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)
       stop
