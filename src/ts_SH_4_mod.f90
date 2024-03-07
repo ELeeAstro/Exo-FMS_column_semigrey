@@ -443,11 +443,10 @@ contains
         end do
       end do
 
-
       expdtau(:) = exp(-min(dtau(:)/u1,35.0_dp))
       Nint0(:) = w_multi(1,:) * ((1.0_dp-w0(:)) * u1 / a(1,:) * ( b0(:)*(1.0_dp-expdtau(:)) &
         & + b1(:)*(u1 - (dtau(:)+u1)*expdtau(:))))
-      Nint1(:) = w_multi(2,:)*Pubar1(2)* ((1.0_dp-w0(:)) * u1 / a(1,:) * ( b1(:)*(1.0_dp-expdtau(:)) / a(2,:)))
+      Nint1(:) = w_multi(2,:)*u1* ((1.0_dp-w0(:)) * u1 / a(1,:) * ( b1(:)*(1.0_dp-expdtau(:)) / a(2,:)))
       Nint2(:) = 0.0_dp
       Nint3(:) = 0.0_dp
 

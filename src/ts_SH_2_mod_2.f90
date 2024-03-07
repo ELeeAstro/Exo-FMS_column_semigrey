@@ -157,11 +157,9 @@ contains
     integer, dimension(2*nlay) :: ipiv
 
     real(dp), dimension(2) :: Pubar1
-    real(dp), dimension(nlay) :: alpha, beta, expo_alp, expo_bet, exptrm_alp, exptrm_bet
+    real(dp), dimension(nlay) :: X1, X2, alpha, beta, expo_alp, expo_bet, exptrm_alp, exptrm_bet
     real(dp), dimension(nlay) :: expdtau, Aint0, Aint1, Nint0, Nint1
     real(dp), dimension(nlay) :: multi_scat, intgrl_per_layer
-    real(dp), dimension(2,2,nlay) :: AA
-    real(dp), dimension(2,nlay) :: Aint, X, Nint
 
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
@@ -201,13 +199,13 @@ contains
     end do
 
     !! Linear B with tau function
-    !where (dtau(:) < 1.0e-6_dp)
-    !  b1(:) = 0.0_dp
-    !  b0(:) = 0.5_dp*(be(2:nlev) + be(1:nlay))
-    !elsewhere
+    where (dtau(:) < 1.0e-6_dp)
+      b1(:) = 0.0_dp
+      b0(:) = 0.5_dp*(be(2:nlev) + be(1:nlay))
+    elsewhere
       b1(:) = (be(2:nlev) - be(1:nlay))/dtau(:) 
       b0(:) = be(1:nlay)
-    !end where
+    end where
 
     tau_top = dtau(1)*pe(1)/(pe(2)-pe(1))
     b_top = pi*(1.0_dp - exp(-tau_top / mu1 )) * be(1)
@@ -292,8 +290,8 @@ contains
 
     !! Split B into downward and upward components
     do i = 1, nlay
-      X(1,i) = B(2*i - 1)
-      X(2,i) = B(2*i)
+      X1(i) = B(2*i - 1)
+      X2(i) = B(2*i)
     end do
 
     !! Now do the source function technique to get up and down fluxes
@@ -313,33 +311,23 @@ contains
       exptrm_alp(:) = (1.0_dp - exp(-expo_alp(:))) / alpha(:)
       exptrm_bet(:) = (1.0_dp - exp(-expo_bet(:))) / beta(:)
 
-      AA(1,1,:) = exptrm_alp(:)
-      AA(1,2,:) = exptrm_bet(:)
-      AA(2,1,:) = -q(:)*exptrm_alp(:)
-      AA(2,2,:) = q(:)*exptrm_bet(:)
+      Aint0(:) = X1(:)  * (w_multi(1,:)-w_multi(2,:)*Pubar1(2)*q(:)) * exptrm_alp(:)
+      Aint1(:) = X2(:) * (w_multi(1,:)+w_multi(2,:)*Pubar1(2)*q(:)) * exptrm_bet(:)
 
       expdtau(:) = exp(-dtau(:)/uarr(m))
-      Nint(1,:) = 2.0_dp*pi*((1.0_dp-w0(:)) * uarr(m) & 
+      Nint0(:) = w_multi(1,:)*((1.0_dp-w0(:)) * uarr(m) & 
         & / a(1,:) * (b0(:) *(1.0_dp-expdtau(:)) + b1(:)*(uarr(m) - (dtau(:)+uarr(m))*expdtau(:)))) 
-      Nint(2,:) = 2.0_dp*pi*((1.0_dp-w0(:)) * uarr(m) / a(1,:) * ( b1(:)*(1.0_dp-expdtau(:)) / a(2,:)))
+      Nint1(:) = w_multi(2,:)*Pubar1(2)*((1.0_dp-w0(:)) * uarr(m) / a(1,:) * ( b1(:)*(1.0_dp-expdtau(:)) / a(2,:)))
 
-      do k = 1, nlay
-        Aint(:,k) = matmul(AA(:,:,k), X(:,k)) + Nint(:,k)
-      end do
-
-      multi_scat(:) = w_multi(1,:)*Pubar1(1)*Aint(1,:) + w_multi(2,:)*Pubar1(2)*Aint(2,:)
+      multi_scat(:) = Aint0(:) + Nint0(:) + Aint1(:) + Nint1(:)
 
       expo(:) = min(dtau(:) / uarr(m), 35.0)  
       expdtau(:) = exp(-expo(:))
 
-      intgrl_per_layer(:) = (w0(:) *  multi_scat(:) &
+      intgrl_per_layer(:) = (w0(:) *  multi_scat(:) *2*pi &
         & + 2.0_dp*pi*(1.0_dp-w0(:)) * uarr(m) * &
         & (b0(:) * (1.0_dp - expdtau(:)) &
         & + b1(:) * (uarr(m) - (dtau(:) + uarr(m)) * expdtau(:))))
-
-      print*, intgrl_per_layer(:)
-
-      !stop
 
       lw_down_g(1) = 2.0_dp*pi*(1.0_dp - exp(-tau_top/uarr(m)))*be(1)
       do k = 1, nlay

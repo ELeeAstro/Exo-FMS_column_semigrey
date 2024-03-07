@@ -32,7 +32,6 @@ LFLAGS    = $(FFLAGS)
 
 
 OBJECTS = \
-		toms715.o \
 	  k_Rosseland_mod.o \
 	  IC_mod.o \
 	  dry_conv_adj_mod.o \
