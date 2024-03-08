@@ -161,14 +161,9 @@ contains
     real(dp), dimension(16,4*nlay) :: Mb_F
     real(dp), dimension(4*nlay) :: B
     real(dp), dimension(nlay) :: X1, X2, X3, X4
-
-    real(dp), dimension(4*nlev, 4*nlay) :: F
-    real(dp), dimension(4*nlev) :: G
-    real(dp), dimension(4*nlay) :: F_bot
-    real(dp) :: G_bot
     
     integer :: info
-    integer, dimension(2*nlay) :: ipiv
+    integer, dimension(4*nlay) :: ipiv
 
     integer :: j
     real(dp), dimension(4,4,nlay) :: AA
@@ -176,7 +171,7 @@ contains
     real(dp), dimension(nlay) :: alpha1, alpha2, beta1, beta2, expo_alp1, expo_alp2, expo_bet1, expo_bet2
     real(dp), dimension(4,nlay) :: exptrm, Aint
     real(dp), dimension(nlay) :: Nint0, Nint1, Nint2, Nint3, expdtau, expo
-    real(dp), dimension(nlay) :: multi_scat, intgrl_per_layer
+    real(dp), dimension(nlay) :: multi_scat, intgrl_per_layer, Svp, Svm
     real(dp) :: u1
 
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
@@ -194,19 +189,19 @@ contains
     fc(:) = g_in(:)**(nstr)
     pmom2(:) = g_in(:)**(nstr+1)
 
-    ! where (fc(:) /=  pmom2(:))
-    !   sigma_sq(:) = real((nstr+1)**2 - nstr**2,dp) / &
-    !   & ( log(fc(:)**2/pmom2(:)**2) )
-    !   c(:) = exp(real(nstr**2,dp)/(2.0_dp*sigma_sq(:)))
-    !   fc(:) = c(:)*fc(:)
+    where (fc(:) /=  pmom2(:))
+      sigma_sq(:) = real((nstr+1)**2 - nstr**2,dp) / &
+      & ( log(fc(:)**2/pmom2(:)**2) )
+      c(:) = exp(real(nstr**2,dp)/(2.0_dp*sigma_sq(:)))
+      fc(:) = c(:)*fc(:)
 
-    !   w0(:) = w_in(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*w_in(:)))
-    !   dtau(:) = (1.0_dp - w_in(:)*fc(:))*dtau(:)
+      w0(:) = w_in(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*w_in(:)))
+      dtau(:) = (1.0_dp - w_in(:)*fc(:))*dtau(:)
 
-    ! elsewhere
-    w0(:) = w_in(:)
-    !   fc(:) = 0.0_dp
-    ! end where
+    elsewhere
+      w0(:) = w_in(:)
+      fc(:) = 0.0_dp
+    end where
 
     g0(:) = g_in(:)
 
@@ -251,9 +246,21 @@ contains
     lam2(:) = sqrt((beta(:) - sqrt((beta(:)**2 - 4.0_dp*gam(:))))/2.0_dp)
 
     !! Find e values
-    exptrm1(:) = min(lam1(:)*dtau(:),35.0_dp)
+    where (lam1(:)*dtau(:) > 35.0_dp)
+      exptrm1(:) = 35.0_dp
+    elsewhere (lam1(:)*dtau(:) < -35.0_dp)
+      exptrm1(:) = -35.0_dp
+    elsewhere
+      exptrm1(:) = lam1(:)*dtau(:)
+    end where
     exptrm1(:) = exp(-exptrm1(:))
-    exptrm2(:) = min(lam2(:)*dtau(:),35.0_dp)
+    where (lam2(:)*dtau(:) > 35.0_dp)
+      exptrm2(:) = 35.0_dp
+    elsewhere (lam2(:)*dtau(:) < -35.0_dp)
+      exptrm2(:) = -35.0_dp
+    elsewhere
+      exptrm2(:) = lam2(:)*dtau(:)
+    end where
     exptrm2(:) = exp(-exptrm2(:)) 
 
     R1(:) = -a(1,:)/lam1(:); R2(:) = -a(1,:)/lam2(:)
@@ -420,10 +427,34 @@ contains
       alpha2(:) = 1.0_dp/u1 + lam2(:)
       beta1(:) =  1.0_dp/u1 - lam1(:)
       beta2(:) =  1.0_dp/u1 - lam2(:)
-      expo_alp1(:) = min(alpha1(:) * dtau(:),35.0_dp)
-      expo_alp2(:) = min(alpha2(:) * dtau(:),35.0_dp)
-      expo_bet1(:) = min(beta1(:) * dtau(:) ,35.0_dp)
-      expo_bet2(:) = min(beta2(:) * dtau(:) ,35.0_dp)
+      where (alpha1(:) * dtau(:) > 35) 
+        expo_alp1(:) = 35
+      elsewhere (alpha1(:) * dtau(:) < -35) 
+        expo_alp1(:) = -35
+      elsewhere
+        expo_alp1(:) = alpha1(:) * dtau(:)
+      end where
+      where (alpha2(:) * dtau(:) > 35) 
+        expo_alp2(:) = 35
+      elsewhere (alpha2(:) * dtau(:) < -35) 
+        expo_alp2(:) = -35
+      elsewhere
+        expo_alp2(:) = alpha2(:) * dtau(:)
+      end where
+      where (beta1(:) * dtau(:) > 35) 
+        expo_bet1(:) = 35
+      elsewhere (beta1(:) * dtau(:) < -35) 
+        expo_bet1(:) = -35
+      elsewhere
+        expo_bet1(:) = beta1(:) * dtau(:)
+      end where
+      where (beta2(:) * dtau(:) > 35) 
+        expo_bet2(:) = 35
+      elsewhere (beta2(:) * dtau(:) < -35) 
+        expo_bet2(:) = -35
+      elsewhere
+        expo_bet2(:) = beta2(:) * dtau(:)
+      end where
       exptrm(1,:) = (1.0_dp - exp(-expo_alp1(:))) / alpha1(:) * X1(:)
       exptrm(2,:) = (1.0_dp - exp(-expo_bet1(:))) / beta1(:)  * X2(:)
       exptrm(3,:) = (1.0_dp - exp(-expo_alp2(:))) / alpha2(:) * X3(:)
@@ -455,19 +486,24 @@ contains
       expo(:) = min(dtau(:) / uarr(m), 35.0_dp)  
       expdtau(:) = exp(-expo(:))
 
-      intgrl_per_layer(:) = (w0(:) *  multi_scat(:) *2.0_dp*pi &
-        & + 2.0_dp*pi*(1.0_dp-w0(:)) * uarr(m) * &
+      intgrl_per_layer(:) = w0(:) *  multi_scat(:) *2.0_dp*pi 
+      Svp(:) =  2.0_dp*pi*(1.0_dp-w0(:)) * uarr(m) * &
         & (b0(:) * (1.0_dp - expdtau(:)) &
-        & + b1(:) * (uarr(m) - (dtau(:) + uarr(m)) * expdtau(:))))
+        & + b1(:) * (uarr(m) - (dtau(:) + uarr(m)) * expdtau(:)))
+      Svm(:) = 2.0_dp*pi*(1.0_dp-w0(:)) * uarr(m) * &
+        & (b0(:) * (1.0_dp - expdtau(:)) &
+        & + b1(:) * (uarr(m)*expdtau(:) + dtau(:) - uarr(m)))
+
 
       lw_down_g(1) = 2.0_dp*pi*(1.0_dp - exp(-tau_top/uarr(m)))*be(1)
       do k = 1, nlay
-        lw_down_g(k+1) = (lw_down_g(k) * exp(-dtau(k)/uarr(m)) + intgrl_per_layer(k) / uarr(m)) 
+       !print*, m, k, exp(-min(dtau(k)/uarr(m),35.0_dp)), 1.0_dp/u1, lam1(k), lam2(k)
+        lw_down_g(k+1) = lw_down_g(k) * exp(-min(dtau(k)/uarr(m),35.0_dp)) + (Svm(k)+intgrl_per_layer(k)) / uarr(m)
       end do
 
-      lw_up_g(nlev) = be(nlev) + b1(nlay) * uarr(m)*2.0_dp*pi
+      lw_up_g(nlev) = (be(nlev) + b1(nlay) * uarr(m))*2.0_dp*pi
       do k = nlay, 1, -1
-        lw_up_g(k) = (lw_up_g(k+1) * exp(-dtau(k)/uarr(m)) + intgrl_per_layer(k) / uarr(m)) 
+        lw_up_g(k) = lw_up_g(k+1) * exp(-min(dtau(k)/uarr(m),35.0_dp)) + (Svp(k)+intgrl_per_layer(k)) / uarr(m)
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
@@ -476,12 +512,11 @@ contains
 
     end do
 
+    ! print*, lw_down(:)
+    ! print*, '-'
     ! print*, lw_up(:)
 
-    ! print*, '-'
-    ! print*, lw_down(:)
-
-    !stop
+    ! stop
 
   end subroutine lw_SH_4
 

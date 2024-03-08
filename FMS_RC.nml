@@ -3,7 +3,7 @@
 
 &FMS_RC_nml
 
-ts_scheme = 'SH_2'
+ts_scheme = 'VIM'
 opac_scheme = 'Constant'
 adj_scheme = 'Ray_dry'
 
@@ -14,7 +14,7 @@ b_sh = 'hybrid_sigma/Hybrid_sigma_grid_b_54.txt'
 pref = 1e8
 
 t_step = 60.0
-nstep = 15
+nstep = 100000
 Rd_air = 3556.8
 cp_air = 1.3e4
 grav = 10.0
@@ -33,8 +33,8 @@ met = 0.0
 ns = 1.0
 nl = 1.0
 
-sw_ac = 0.0
-sw_gc = 0.0
+sw_ac = 0.5
+sw_gc = 0.5
 lw_ac = 0.5
 lw_gc = 0.5
 
