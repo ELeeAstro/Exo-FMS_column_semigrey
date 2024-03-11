@@ -24,6 +24,7 @@ program Exo_FMS_RC
   use ts_disort_scatter_mod, only : ts_disort_scatter
   use ts_SH_2_mod, only : ts_SH_2
   use ts_SH_4_mod, only : ts_SH_4
+  use ts_maxeff_mod, only : ts_maxeff
   use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
   use IC_mod, only : IC_profile
   use dry_conv_adj_mod, only : Ray_dry_adj
@@ -311,6 +312,9 @@ program Exo_FMS_RC
     case('SH_4')
       call ts_SH_4(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
         & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
+    case('maxeff')
+      call ts_maxeff(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
+        & net_F, olr, asr)
       case('None')
     case default
       print*, 'Invalid ts_scheme: ', trim(ts_scheme)
