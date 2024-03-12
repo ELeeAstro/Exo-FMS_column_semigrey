@@ -20,16 +20,15 @@ module ts_VIM_mod
   real(dp), parameter :: fourpi = 4.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  !! Legendre quadrature for 1 nodes
+  !! Optimised quadrature for 1 node (Hogan 2024)
   ! integer, parameter :: nmu = 1
-  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/)
+  ! real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
   ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
+  !! Gauss–Jacobi-5 quadrature for 2 nodes (Hogan 2024)
   integer, parameter :: nmu = 2
-  real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
-  real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
-  real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+  real(dp), dimension(nmu), parameter :: uarr = (/0.2509907356_dp, 0.7908473988_dp/)
+  real(dp), dimension(nmu), parameter :: w = (/0.2300253764_dp, 0.7699746236_dp/)
 
   !! Use Two-Term HG function for sw
   logical, parameter :: TTHG = .False.
@@ -233,13 +232,13 @@ contains
 
       do i = 1, nmu
         !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-        lw_down(:) = lw_down(:) + lw_down_g(i,:) * wuarr(i)
-        lw_up(:) = lw_up(:) + lw_up_g(i,:) * wuarr(i)
+        lw_down(:) = lw_down(:) + lw_down_g(i,:) * w(i)
+        lw_up(:) = lw_up(:) + lw_up_g(i,:) * w(i)
       end do
 
-      !! The flux is the integrated intensity * 2pi
-      lw_down(:) = twopi * lw_down(:)
-      lw_up(:) = twopi * lw_up(:)
+      !! The flux is the integrated intensity * pi ()
+      lw_down(:) = pi * lw_down(:)
+      lw_up(:) = pi * lw_up(:)
 
       return
 
@@ -371,14 +370,14 @@ contains
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      lw_down(:) = lw_down(:) + lw_down_g(i,:) * wuarr(i)
-      lw_up(:) = lw_up(:) + lw_up_g(i,:) * wuarr(i)
+      lw_down(:) = lw_down(:) + lw_down_g(i,:) * w(i)
+      lw_up(:) = lw_up(:) + lw_up_g(i,:) * w(i)
 
     end do
 
-    !! The flux is the integrated intensity * 2pi
-    lw_down(:) = twopi * lw_down(:)
-    lw_up(:) = twopi * lw_up(:)
+    !! The flux is the integrated intensity * pi (in this GJ weighting scheme)
+    lw_down(:) = pi * lw_down(:)
+    lw_up(:) = pi * lw_up(:)
 
   end subroutine lw_VIM
 

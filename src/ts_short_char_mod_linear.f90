@@ -25,38 +25,15 @@ module ts_short_char_mod_linear
   !! here you can comment in/out groups of mu values for testing
   !! make sure to make clean and recompile if you change these
 
-  !! single angle diffusion factor approximation - typically 1/1.66 (Li 2000 = 1/1.6487213)
+  !! Optimised quadrature for 1 node (Hogan 2024)
   ! integer, parameter :: nmu = 1
-  ! real(dp), dimension(nmu), parameter :: uarr = (/1.0_dp/1.6487213_dp/)
+  ! real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
   ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
-
-  !! Legendre quadrature for 2 nodes
+  !! Gauss–Jacobi-5 quadrature for 2 nodes (Hogan 2024)
   integer, parameter :: nmu = 2
-  real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
-  real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
-  real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
-  !! Lacis & Oinas (1991) 3 point numerical values - Does not work somehow, e-mail me if you know why :)
-  ! integer, parameter :: nmu = 3
-  ! real(dp), dimension(nmu), parameter :: uarr = (/0.1_dp, 0.5_dp, 1.0_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = (/0.0433_dp, 0.5742_dp, 0.3825_dp/)
-
-  !! Legendre quadrature for 4 nodes
-  ! integer, parameter :: nmu = 4
-  ! real(dp), dimension(nmu), parameter :: uarr = &
-  !   & (/0.06943184_dp, 0.33000948_dp, 0.66999052_dp, 0.93056816_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = &
-  !   & (/0.17392742_dp, 0.32607258_dp, 0.32607258_dp, 0.17392742_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
-  !! 5 point EGP quadrature values
-  ! integer, parameter :: nmu = 5
-  ! real(dp), dimension(nmu), parameter :: uarr = &
-  !   &(/0.0985350858_dp, 0.3045357266_dp, 0.5620251898_dp, 0.8019865821_dp, 0.9601901429_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = &
-  !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
+  real(dp), dimension(nmu), parameter :: uarr = (/0.2509907356_dp, 0.7908473988_dp/)
+  real(dp), dimension(nmu), parameter :: w = (/0.2300253764_dp, 0.7699746236_dp/)
 
   public :: ts_short_char_linear
   private :: lw_grey_updown_linear, sw_grey_updown_adding, linear_interp, Bezier_interp
@@ -232,14 +209,14 @@ contains
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      lw_down(:) = lw_down(:) + lw_down_g(:) * wuarr(m)
-      lw_up(:) = lw_up(:) + lw_up_g(:) * wuarr(m)
+      lw_down(:) = lw_down(:) + lw_down_g(:) * w(m)
+      lw_up(:) = lw_up(:) + lw_up_g(:) * w(m)
 
     end do
 
-    !! The flux is the intensity * 2pi
-    lw_down(:) = twopi * lw_down(:)
-    lw_up(:) = twopi * lw_up(:)
+    !! The flux is the intensity * pi (in this GJ weighting scheme)
+    lw_down(:) = pi * lw_down(:)
+    lw_up(:) = pi * lw_up(:)
 
   end subroutine lw_grey_updown_linear
 
