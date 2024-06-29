@@ -36,7 +36,7 @@ contains
 
 
     !! Work variables
-    integer :: b, g, i
+    integer :: i
     real(dp), dimension(nlev) :: Te
 
     !! Conversion arrays from FMS to DISORT dimensions and work variables
@@ -73,7 +73,7 @@ contains
     dtauc(:) = 0.0_dp
 
     wvnmlo = 0.0_dp
-    wvnmhi = 300000.0_dp
+    wvnmhi = 1e7_dp
 
     ggg(1:nlay) = gg(:)
     ssalb(1:nlay) = ssa(:)
@@ -82,8 +82,8 @@ contains
       dtauc(i) = (tau_e(i+1) - tau_e(i))
     end do
 
-    call call_twostr(nlay,Te,ggg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
-      & lw_net(:),lw_up(:),lw_down(:))
+    call call_twostr(nlay,Te_0,ggg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
+      & lw_net_d(:),lw_up_d(:),lw_down_d(:))
 
     lw_net(:) = lw_net_d(1:nlev)
     lw_up(:) = lw_up_d(1:nlev)

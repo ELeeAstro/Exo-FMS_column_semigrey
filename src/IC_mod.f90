@@ -134,9 +134,7 @@ contains
 
     tau_IRl(:) = fl * (pl(:)/p0 * tau0) + (1.0_dp - fl) * ((pl(:)/p0)**2 * tau0)
 
-    if (mu_in <= 0.0_dp) then
-      mu = 1e-12_dp
-    end if
+    mu = max(1e-6_dp,mu_in)
 
     Tl(:) = ((3.0_dp/4.0_dp) * Tint**4 * (tau_IRl(:) + 2.0_dp/3.0_dp))
     Tl(:) = Tl(:) + (mu * 3.0_dp * Tirr**4)/4.0_dp *  &
@@ -172,10 +170,8 @@ contains
     real(dp), dimension(nlay) :: kRoss
 
 
-    if (mu_in <= 0.0_dp) then
-      mu = 1e-12_dp
-    end if
-
+    mu = max(1e-6_dp,mu_in)
+    
     !! Effective temperature parameter
     Tmu = (mu * Tirr**4)**(1.0_dp/4.0_dp)
 

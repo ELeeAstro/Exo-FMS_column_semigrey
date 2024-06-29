@@ -68,8 +68,8 @@ contains
     Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Find integrated planck function for each level
-    be(:) = sb * Te(:)**4
-    be_int = sb * Tint**4
+    be(:) = (sb * Te(:)**4)/pi
+    be_int = (sb * Tint**4)/pi
 
     !! Longwave flux calculation
     call lw_VIM_fs(nlay, nlev, be(:), be_int, tau_e(:), ssa(:), gg(:), lw_up(:), lw_down(:))

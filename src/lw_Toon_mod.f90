@@ -65,7 +65,6 @@ contains
     !! Work variables
     real(dp), dimension(nlev) :: Te
     real(dp), dimension(nlev) :: be
-    real(dp) :: be_int
 
     !! Use WENO4 method to (smoothly) interpolate layers to levels
     Te(:) = interpolate_weno4(pe, pl, Tl, .False.)
@@ -75,8 +74,7 @@ contains
     Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Find integrated planck function for each level
-    be(:) = sb * Te(:)**4
-    be_int = sb * Tint**4
+    be(:) = (sb * Te(:)**4)/pi
 
     !! Longwave flux calculation
     call lw_Toon89(nlay, nlev, be(:), tau_e(:), ssa(:), gg(:), a_surf, &

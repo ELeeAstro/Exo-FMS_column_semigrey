@@ -25,7 +25,7 @@
 !     |* ftp://climate1.gsfc.nasa.gov/wiscombe/Multiple_Scatt/TWOSTR/
 
       SUBROUTINE CALL_TWOSTR(nlyr,temper,gg,ssalb,dtauc,ntau,utau,
-     $     planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,fnetup,olr)
+     $     planck,wvnmlo,wvnmhi,Tint,fbeam,umu0,flnet,flup,fldown)
 
       IMPLICIT NONE
       INTEGER maxcly
@@ -40,7 +40,7 @@
       REAL*8 gg(maxcly),ssalb(maxcly),dtauc(maxcly)
       REAL*8 fbeam,umu0,Tint,wvnmlo,wvnmhi
 !     ------------------ OUTPUT VARIABLES ----------------
-      REAL*8 fnetup(maxulv), olr
+      REAL*8 flnet(maxulv), flup(maxulv), fldown(maxulv)
 
 !     ------------------ LOCAL VARIABLES -----------------
       LOGICAL :: quiet = .true.
@@ -53,8 +53,8 @@
       REAL*8 :: temis = 0.0
       REAL*8 :: ttemp = 0.0
       REAL*8 btemp,radius
-      REAL*8 dfdt(maxulv), flup(maxulv), rfldir(maxulv),
-     $     rfldn(maxulv), uavg(maxulv),zd(0:maxcly)
+      REAL*8 dfdt(maxulv), rfldir(maxulv),
+     $     rfldn(maxulv), uavg(maxulv), zd(0:maxcly)
       REAL*8 taucum
       INTEGER ierror(nerr),i,j,k,ierr
       CHARACTER header*127
@@ -63,7 +63,8 @@
 
 !     INITIALIZATION FOR FNETUP
       DO i = 1,maxulv
-         fnetup(i) = 0.d0
+         flnet(i) = 0.d0
+         fldown(i) = 0.d0
       ENDDO
 
       taucum = 0.
@@ -81,10 +82,9 @@
      $     temper, ttemp, umu0,  usrtau, utau, wvnmlo,
      $     wvnmhi, zd, dfdt, flup, rfldir, rfldn, uavg )
       do i = 1,ntau
-         fnetup(i) = flup(i) - rfldir(i) - rfldn(i)
+         fldown(i) = rfldir(i) + rfldn(i)
+         flnet(i) = flup(i) - fldown(i)
       enddo
-
-      olr = flup(1)
 
          DO ierr = 1, nerr
             IF ( ierror(ierr) .NE. 0 ) THEN
@@ -1788,7 +1788,7 @@ c
       IF ( wnumhi .eq. wnumlo ) THEN
          wvn  =  wnumhi
          arg  = DEXP( - C2 * wvn / T )
-         plkavg = c1 * (wvn**3.) * arg / ( 1. - arg )
+         tplkavg = c1 * (wvn**3.) * arg / ( 1. - arg )
          RETURN
       ENDIF
 c

@@ -56,7 +56,7 @@ program Exo_FMS_RC
   real(dp) :: tau_Vref, tau_IRref
   real(dp), allocatable, dimension(:) :: Tl, pl, pe, dpe
   real(dp), allocatable, dimension(:) :: k_Vl, k_IRl
-  real(dp), allocatable, dimension(:) :: tau_Ve, tau_IRe, tau_IRl
+  real(dp), allocatable, dimension(:) :: tau_Ve, tau_IRe
   real(dp), allocatable, dimension(:) :: dT_rad, dT_conv, net_F
 
   real(dp), allocatable, dimension(:) :: sw_a, sw_g, lw_a, lw_g
@@ -309,7 +309,7 @@ program Exo_FMS_RC
     case('sw_Feautier')
       ! Feautier method
       !call sw_Feautier(nlay, nlev, nb, ng, gw, tau_e, mu_z_eff, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)  
-    case('lw_AD')
+    case('sw_AD')
       ! Adding-doubling method
       !call sw_AD(nlay, nlev, nb, ng, gw, tau_e, mu_z_eff, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)
     case('none')
@@ -370,6 +370,7 @@ program Exo_FMS_RC
       call MLT(nlay, nlev, t_step, Tl, pl, pe, Rd_bar, cp_bar, kappa_bar, &
          & grav, dT_conv, Kzz)      
     case('none')
+      Kzz(:) = 1e1_dp
     case default
       print*, 'Invalid adj_scheme: ', trim(adj_scheme)
       stop
