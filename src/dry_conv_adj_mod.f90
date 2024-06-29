@@ -12,7 +12,7 @@ module dry_conv_adj_mod
   !! Precision variables
   integer, parameter :: dp = REAL64
 
-  integer, parameter :: itermax = 5
+  integer, parameter :: itermax = 10
   real(dp), parameter :: small = 1.0e-6_dp
 
 contains

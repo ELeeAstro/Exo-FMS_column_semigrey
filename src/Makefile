@@ -32,33 +32,26 @@ LFLAGS    = $(FFLAGS)
 
 
 OBJECTS = \
+	  WENO4_mod.o \
+	  call_twostr.o \
 	  k_Rosseland_mod.o \
 	  IC_mod.o \
 	  dry_conv_adj_mod.o \
-		call_twostr.o \
-	  ts_isothermal_mod.o \
-	  ts_isothermal_2_mod.o \
-	  ts_Toon_mod.o \
-    ts_Toon_scatter_mod.o \
-	  ts_short_char_mod_linear.o \
-    ts_AA_E_mod.o \
-		ts_AA_L_mod.o \
-		ts_VIM_mod.o \
-    ts_Lewis_scatter_mod.o \
-		ts_disort_scatter_mod.o \
-		ts_SH_2_mod.o \
-		ts_SH_4_mod.o \
-		ts_maxeff_mod.o \
+		MLT_mod.o \
+		sw_direct_mod.o \
+		sw_adding_mod.o \
+		sw_SDA_mod.o \
+		sw_Toon_mod.o \
+		sw_SH2_mod.o \
+		sw_SH4_mod.o \
+		sw_disort_ts_mod.o \
+		lw_AA_E_mod.o \
+		lw_AA_L_mod.o \
+		lw_sc_linear_mod.o \
+		lw_VIM_mod.o \
+		lw_Toon_mod.o \
+		lw_disort_ts_mod.o \
     FMS_RC.o
-
-#		ts_Heng_ITS_mod.o \
-#    RDI1MACH.o \
-#		LAPACK.o \
-#    LINPAK.o \
-#		ERRPACK.o \
-#		DISOBRDF.o \
-#		BDREF.o \
-#		DISORT.o \
 
 # executable statement
 EXECS  = ../FMS_RC_sg

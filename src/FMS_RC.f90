@@ -12,22 +12,34 @@
 
 program Exo_FMS_RC
   use, intrinsic :: iso_fortran_env
-  use ts_isothermal_mod, only : ts_isothermal
-  use ts_isothermal_2_mod, only : ts_isothermal_2
-  use ts_Toon_mod, only : ts_Toon
-  use ts_Toon_scatter_mod, only : ts_Toon_scatter
-  use ts_short_char_mod_linear, only : ts_short_char_linear
-  use ts_AA_E_mod, only : ts_AA_E
-  use ts_AA_L_mod, only : ts_AA_L
-  use ts_VIM_mod, only : ts_VIM
-  use ts_Lewis_scatter_mod, only : ts_Lewis_scatter
-  use ts_disort_scatter_mod, only : ts_disort_scatter
-  use ts_SH_2_mod, only : ts_SH_2
-  use ts_SH_4_mod, only : ts_SH_4
-  use ts_maxeff_mod, only : ts_maxeff
+
+  use sw_direct_mod, only : sw_direct
+  use sw_adding_mod, only : sw_adding
+  use sw_SDA_mod, only : sw_SDA
+  use sw_Toon_mod, only : sw_Toon
+  use sw_SH2_mod, only : sw_SH2
+  use sw_SH4_mod, only : sw_SH4
+  use sw_disort_ts_mod, only : sw_disort_ts
+  !use sw_disort_mod, only : sw_disort
+  !use sw_Feautrier_mod, only : sw_Feautrier
+
+  use lw_AA_E_mod, only : lw_AA_E
+  use lw_AA_L_mod, only : lw_AA_L
+  use lw_sc_linear_mod, only : lw_sc_linear
+  use lw_VIM_mod, only : lw_VIM
+  use lw_Toon_mod, only : lw_Toon
+  use lw_disort_ts_mod, only : lw_disort_ts
+  !use lw_disort_mod, only : lw_disort
+  !use lw_Feautrier_mod, only : lw_Feautrier
+  !use lw_AD_mod, only : lw_AD
+
   use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
+
   use IC_mod, only : IC_profile
+
   use dry_conv_adj_mod, only : Ray_dry_adj
+  use MLT_mod, only : MLT
+
   use ieee_arithmetic
   implicit none
 
@@ -37,10 +49,10 @@ program Exo_FMS_RC
   ! Constants
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  integer :: n, i, k, u, j, inan
+  integer :: n, i, k, u, uu, j, inan
   integer :: nstep, nlay, nlev
   real(dp) :: t_step, t_tot
-  real(dp) :: mu_z, Tirr, Tint, F0, Fint, pref, pu, met
+  real(dp) :: mu_z, Tirr, Tint, Finc, Fint, pref, pu, met
   real(dp) :: tau_Vref, tau_IRref
   real(dp), allocatable, dimension(:) :: Tl, pl, pe, dpe
   real(dp), allocatable, dimension(:) :: k_Vl, k_IRl
@@ -48,6 +60,10 @@ program Exo_FMS_RC
   real(dp), allocatable, dimension(:) :: dT_rad, dT_conv, net_F
 
   real(dp), allocatable, dimension(:) :: sw_a, sw_g, lw_a, lw_g
+
+  real(dp), allocatable, dimension(:) :: sw_up, sw_down, sw_net, lw_up, lw_down, lw_net
+
+  real(dp), allocatable, dimension(:) :: Kzz, Rd_bar, cp_bar, kappa_bar
 
   real(dp) :: cp_air, grav, k_IR, k_V, kappa_air, Rd_air
   real(dp) :: sw_ac, sw_gc, lw_ac, lw_gc
@@ -66,21 +82,19 @@ program Exo_FMS_RC
   logical :: surf
   real(dp) :: Ts_init, sw_a_surf, cp_surf, Tstrat_init, lw_a_surf, ns, nl
 
-  logical :: Bezier
-
   integer :: ua, ub
   character(len=50) :: a_sh, b_sh
   real(dp), allocatable, dimension(:) :: a, b
 
   real(dp) :: start, finish
 
-  character(len=50) :: ts_scheme, opac_scheme, adj_scheme
+  character(len=50) :: sw_scheme, lw_scheme, opac_scheme, adj_scheme
 
   integer :: u_nml
 
-  namelist /FMS_RC_nml/ ts_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
+  namelist /FMS_RC_nml/ sw_scheme, lw_scheme, opac_scheme, adj_scheme, nlay, a_sh, b_sh, pref, &
           & t_step, nstep, Rd_air, cp_air, grav, mu_z, Tirr, Tint, k_V, k_IR, AB, fl, met, &
-          & iIC, corr, sw_ac, sw_gc, lw_ac, lw_gc, sw_a_surf, Bezier, surf, Ts_init, cp_surf, &
+          & iIC, corr, sw_ac, sw_gc, lw_ac, lw_gc, sw_a_surf, surf, Ts_init, cp_surf, &
           & Tstrat_init, lw_a_surf, ns, nl, zcorr, zcorr_meth, radius
 
   !! Read input variables from namelist
@@ -120,10 +134,8 @@ program Exo_FMS_RC
   allocate(Tl(nlay), dT_rad(nlay), dT_conv(nlay), net_F(nlev))
   allocate(tau_Ve(nlev),tau_IRe(nlev), k_Vl(nlay), k_IRl(nlay))
   allocate(alt(nlev), mu_z_eff(nlev), alp(nlev))
-
-  if (ts_scheme == 'Heng') then
-    allocate(tau_IRl(nlay))
-  end if
+  allocate(sw_up(nlev), sw_down(nlev), sw_net(nlev), lw_up(nlev), lw_down(nlev), lw_net(nlev))
+  allocate(Kzz(nlay), Rd_bar(nlay), cp_bar(nlay), kappa_bar(nlay))
 
   !! Allocate cloud properties - assume constant for all layers in this test code
   !! Adjust these parts for your own situations
@@ -136,7 +148,11 @@ program Exo_FMS_RC
   !! Calculate the adiabatic coefficent
   kappa_air = Rd_air/cp_air   ! kappa = Rd/cp
 
-  F0 = sb * Tirr**4 ! Substellar point irradiation flux
+  Rd_bar(:) = Rd_air
+  cp_bar(:) = cp_air
+  kappa_bar(:) = kappa_air
+
+  Finc = sb * Tirr**4 ! Substellar point irradiation flux
   Fint = sb * Tint**4 ! Internal flux
 
   print*, 'Tint ', 'Tirr ', 'pref ', 'pu ', 'mu_z ', 'grav '
@@ -148,7 +164,7 @@ program Exo_FMS_RC
   k_IRl(:) = k_IR
 
   select case(opac_scheme)
-  case('Constant')
+  case('constant')
     tau_Vref = (k_V * pref) / grav
     tau_IRref = (k_IR * pref) / grav
     fl = 1.0_dp
@@ -163,7 +179,7 @@ program Exo_FMS_RC
 
   !! Initial condition T-p profile - see the routine for options
   call IC_profile(iIC,corr,nlay,pref,pl,k_Vl,k_IRl,Tint,mu_z,Tirr,grav,fl,Tl,prc, &
-  & Ts_init, Tstrat_init, kappa_air)
+    & Ts_init, Tstrat_init, kappa_air)
 
   !! Print initial T-p profile
   do i = 1, nlay
@@ -181,7 +197,7 @@ program Exo_FMS_RC
   close(u)
 
   !! Time stepping loop
-  print*, 'Using: ', trim(ts_scheme)
+  print*, 'Using: ', trim(sw_scheme), ' + ' , trim(lw_scheme)
   print*, 'Start timestepping'
 
   t_tot = 0.0_dp
@@ -196,7 +212,7 @@ program Exo_FMS_RC
     dT_conv(:) = 0.0_dp
 
     select case(opac_scheme)
-    case('Constant')
+    case('constant')
       tau_Ve(:) = tau_Vref * pe(:)/pref
       tau_IRe(:) = tau_IRref * pe(:)/pref
     case('Heng')
@@ -234,7 +250,7 @@ program Exo_FMS_RC
 
 
     !! Zenith angle geometric correction
-    if (zcorr .eqv. .True. .and. mu_z > 0.0_dp) then
+    if ((zcorr .eqv. .True.) .and. (mu_z > 0.0_dp)) then
       ! First calculate the altitude at each level from the hypsometric equation
       ! Assume constant gravity for simplicity
       alt(nlev) = 0.0_dp
@@ -264,83 +280,96 @@ program Exo_FMS_RC
       mu_z_eff(:) = mu_z
     end if
 
-    !! Two stream radiative transfer step
-    select case(ts_scheme)
-    case('Isothermal')
-      ! Isothermal layers approximation
-      call ts_isothermal(surf, nlay, nlev, Ts, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
-    case('Isothermal_2')
-      ! Isothermal layers approximation - first order fix for high optical depths
-      call ts_isothermal_2(surf, nlay, nlev, Ts, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-      & sw_a, sw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
-    case('Toon')
-      ! Toon method without LW scattering
-      call ts_Toon(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-      & sw_a, sw_g, sw_a_surf, net_F, olr, asr)
-    case("Toon_scatter")
-      ! Toon method with SW/LW scattering
-      call ts_Toon_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr)
-    case('Shortchar_linear')
-      ! Short characteristics method without LW scattering
-      call ts_short_char_linear(Bezier, surf, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, &
-        & mu_z_eff, F0, Tint, AB, sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
-    case('Lewis_scatter')
-      ! Neil Lewis's code with SW/LW scattering
-      call ts_Lewis_scatter(nlay, nlev, Tl, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-        & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
-    case('Disort_scatter')
-      ! Two-stream DISORT version (with SW/LW scattering)
-      call ts_disort_scatter(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-        & sw_a, sw_g, lw_a, lw_g, net_F, olr, asr)
-    case('AA_E')
-      ! Absorption Approximation (exoponential Planck function)
-      call ts_AA_E(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)   
-    case('AA_L')
-      ! Absorption Approximation (linear Planck function)
-      call ts_AA_L(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)          
-    case('VIM')
-      ! Variational Iteration Method with analytical LW scattering
-      call ts_VIM(surf, Bezier, nlay, nlev, Ts,  Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs) 
-    case('SH_2')
-      call ts_SH_2(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
-    case('SH_4')
-      call ts_SH_4(surf, Bezier, nlay, nlev, Ts, Tl, pl, pe, tau_Ve, tau_IRe, mu_z_eff, F0, Tint, AB, &
-        & sw_a, sw_g, lw_a, lw_g, sw_a_surf, lw_a_surf, net_F, olr, asr, net_Fs)
-    case('maxeff')
-      call ts_maxeff(Bezier, nlay, nlev, Tl, pl, pe, tau_Ve, tau_IRe, mu_z, F0, Tint, AB, &
-        & net_F, olr, asr)
-      case('None')
+    !! Shortwave radiative transfer step
+    select case(sw_scheme)
+    case('sw_direct')
+      ! Direct beam only method with no scattering
+      call sw_direct(nlev, tau_Ve, mu_z_eff, Finc, sw_a_surf, sw_up, sw_down, sw_net, asr)
+    case('sw_adding')
+      ! Approximate adding method with approximate scattering
+      call sw_adding(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_a_surf, sw_up, sw_down, sw_net, asr)
+    case('sw_SDA')
+      ! Spherical harmonic doubling (SDA) adding four stream method with approximate scattering
+      call sw_SDA(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_a_surf, sw_up, sw_down, sw_net, asr)
+    case('sw_Toon')
+      ! Toon89 shortwave method with multiple scattering
+      call sw_Toon(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_a_surf, sw_up, sw_down, sw_net, asr)
+    case('sw_SH2')
+      ! Spherical harmonic two stream method with multiple scattering
+      call sw_SH2(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_a_surf, sw_up, sw_down, sw_net, asr)
+    case('sw_SH4')
+      ! Spherical harmonic four stream method with multiple scattering
+      call sw_SH4(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_a_surf, sw_up, sw_down, sw_net, asr)
+    case('sw_disort_ts')
+      ! Two stream disort method with multiple scattering
+      call sw_disort_ts(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+    case('sw_disort')
+      ! n-stream disort method with multiple scattering (benchmark method)
+      !call sw_disort(nlay, nlev, nb, ng, gw, tau_e, mu_z_eff, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)
+    case('sw_Feautier')
+      ! Feautier method
+      !call sw_Feautier(nlay, nlev, nb, ng, gw, tau_e, mu_z_eff, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)  
+    case('lw_AD')
+      ! Adding-doubling method
+      !call sw_AD(nlay, nlev, nb, ng, gw, tau_e, mu_z_eff, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)
+    case('none')
     case default
-      print*, 'Invalid ts_scheme: ', trim(ts_scheme)
+      print*, 'Invalid sw_scheme: ', trim(sw_scheme)
+      stop
+    end select
+
+    !! Longwave radiative transfer step
+    select case(lw_scheme)
+    case('lw_AA_E')
+      ! Absorption approximation exponential in tau (AA_E) with approximate scattering
+      call lw_AA_E(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr) 
+    case('lw_AA_L')
+      ! Absorption approximation linear in tau (AA_L) with approximate scattering
+      call lw_AA_L(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)     
+    case('lw_sc_linear')
+      ! Short characteristics (sc) with linear interpolants with no scattering
+      call lw_sc_linear(nlay, nlev, Tl, pl, pe, tau_IRe, Tint, lw_up, lw_down, lw_net, olr)
+    case('lw_VIM')
+      ! Variational Iteration Method (VIM) with approximate scattering
+      call lw_VIM(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
+    case('lw_Toon')
+      ! Toon89 longwave method with multiple scattering
+      call lw_Toon(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, lw_a_surf, Tint, lw_up, lw_down, lw_net, olr)
+    case('lw_disort_ts')
+      ! Two stream disort method with multiple scattering
+      call lw_disort_ts(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
+    case('lw_disort')
+      ! n-stream disort method with multiple scattering (benchmark method)
+      !call lw_disort(nlay, nlev, nb, ng, gw, wn_e, Tl, pl, pe, tau_e, ssa, gg, Tint, lw_up, lw_down, lw_net, olr) 
+    case('lw_Feautier')
+      ! Feautier method
+      !call lw_Feautier(nlay, nlev, nb, ng, gw, wn_e, Tl, pl, pe, tau_e, ssa, gg, Tint, lw_up, lw_down, lw_net, olr) 
+    case('lw_AD')
+      ! Adding-doubling method
+      !call lw_AD(nlay, nlev, nb, ng, gw, wn_e, Tl, pl, pe, tau_e, ssa, gg, a_surf, Tint, lw_up, lw_down, lw_net, olr)
+    case('none')
+    case default
+      print*, 'Invalid lw_scheme: ', trim(lw_scheme)
       stop
     end select
 
     !! Calculate the temperature tendency due to radiation
+    net_F(:) = lw_net(:) + sw_net(:) ! Net flux into/out of level
     do i = 1, nlay
       dT_rad(i) = (grav/cp_air) * (net_F(i+1)-net_F(i))/(dpe(i))
-      !print*, n, i, dT_rad(i)
     end do
-
-    !! Calculate the surface temperature tedency due to radiation
-    if (surf .eqv. .True.) then
-      dTs = net_Fs / (cp_surf)
-    else
-      dTs = 0.0_dp
-    end if
-
 
     !! Convective adjustment scheme
     select case(adj_scheme)
     case('Ray_dry')
       ! Dry convective adjustment following Ray Pierrehumbert's python script
       call Ray_dry_adj(nlay, nlev, t_step, kappa_air, Tl, pl, pe, dT_conv)
-    case('None')
+      Kzz(:) = 1e1_dp
+    case('MLT')
+      ! Use mixing length theory (MLT) to time dependently adjust the adiabat and estimate Kzz
+      call MLT(nlay, nlev, t_step, Tl, pl, pe, Rd_bar, cp_bar, kappa_bar, &
+         & grav, dT_conv, Kzz)      
+    case('none')
     case default
       print*, 'Invalid adj_scheme: ', trim(adj_scheme)
       stop
@@ -351,6 +380,7 @@ program Exo_FMS_RC
 
     !! Forward march the temperature change in the surface
     if (surf .eqv. .True.) then
+      dTs = net_Fs / (cp_surf)
       Ts = Ts + t_step * dTs
     else
       Ts = 0.0_dp
@@ -386,21 +416,31 @@ program Exo_FMS_RC
   print*, 'For profile properties: '
   print*, Tint, Tirr, pref, mu_z
 
-  print*, 'OLR [W m-2]:'
-  print*, olr
+  print*, 'OLR [W m-2], Teff:'
+  print*, olr, (olr/sb)**(0.25_dp)
 
-  print*, 'ASR [W m-2]:'
-  print*, asr
+  print*, 'ASR [W m-2], Tinc:'
+  print*, asr, (asr/sb)**(0.25_dp)
+
+  print*, 'Internal T [W m-2], Tint'
+  print*, sb * Tint**4, Tint
 
   print*, 'Surface T [K]: '
   print*, Ts
 
   print*, 'Outputting results: '
-  open(newunit=u,file='FMS_RC_pp.out', action='readwrite')
+  open(newunit=uu,file='FMS_RC_pp.out', action='readwrite')
   do i = 1, nlay
-    write(u,*) i, pl(i), Tl(i), dT_rad(i), dT_conv(i), 0.5_dp*(tau_Ve(i+1)+tau_Ve(i)), 0.5_dp*(tau_IRe(i+1)+tau_IRe(i))
+    write(uu,*) i, pl(i), Tl(i), dT_rad(i), dT_conv(i), Kzz(i)
   end do
-  close(u)
+  close(uu)
+
+  open(newunit=uu,file='FMS_RC_flx.out', action='readwrite')
+  do i = 1, nlev
+    write(uu,*) i, pe(i), sw_up(i), sw_down(i), sw_net(i), lw_up(i), lw_down(i), lw_net(i), & 
+      & tau_Ve(i), tau_IRe(i)
+  end do
+  close(uu)
 
   print*, n, 'steps took: '
   print '("Time = ",f8.3," seconds.")', finish-start

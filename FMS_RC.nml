@@ -3,28 +3,28 @@
 
 &FMS_RC_nml
 
-ts_scheme = 'VIM'
-opac_scheme = 'Constant'
+sw_scheme = 'sw_direct'
+lw_scheme = 'lw_VIM'
+
+opac_scheme = 'constant'
 adj_scheme = 'Ray_dry'
 
-nlay = 54
-a_sh = 'hybrid_sigma/Hybrid_sigma_grid_a_54.txt'
-b_sh = 'hybrid_sigma/Hybrid_sigma_grid_b_54.txt'
+nlay = 99
+a_sh = 'hybrid_sigma/Hybrid_sigma_grid_a_99.txt'
+b_sh = 'hybrid_sigma/Hybrid_sigma_grid_b_99.txt'
 
-pref = 1e8
+pref = 4e7
 
-t_step = 60.0
-nstep = 100000
-Rd_air = 3556.8
-cp_air = 1.3e4
+t_step = 120.0
+nstep = 10000
+Rd_air = 3568.0
+cp_air = 12053.0
 grav = 10.0
-mu_z = 0.577
+mu_z = 0.0
 Tirr = 1000.0
-Tint = 100.0
+Tint = 500.0
 
-Bezier = .True.
-
-k_V = 6e-4
+k_V = 4e-4
 k_IR = 1e-3
 AB = 0.0
 fl = 1.0
@@ -35,8 +35,8 @@ nl = 1.0
 
 sw_ac = 0.0
 sw_gc = 0.0
-lw_ac = 0.5
-lw_gc = 0.5
+lw_ac = 0.0
+lw_gc = 0.0
 
 zcorr = .False.
 zcorr_meth = 2

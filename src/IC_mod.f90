@@ -114,12 +114,12 @@ contains
 
   end subroutine Tdeep_IC
 
-  subroutine Guillot_IC(nlay,p0,pl,k_V,k_IR,Tint,mu,Tirr,grav,fl,Tl)
+  subroutine Guillot_IC(nlay,p0,pl,k_V,k_IR,Tint,mu_in,Tirr,grav,fl,Tl)
     implicit none
 
     !! Input quantities
     integer, intent(in) :: nlay
-    real(dp), intent(in) :: p0, k_V, k_IR, Tint, mu, Tirr, grav, fl
+    real(dp), intent(in) :: p0, k_V, k_IR, Tint, mu_in, Tirr, grav, fl
     real(dp), dimension(nlay), intent(in) :: pl
 
     !! Output quantities
@@ -127,12 +127,16 @@ contains
 
     !! Work variables
     real(dp), dimension(nlay) :: tau_IRl
-    real(dp) :: gam, tau0
+    real(dp) :: gam, tau0, mu
 
     gam = k_V/k_IR
     tau0 = k_IR/grav * p0 / fl
 
     tau_IRl(:) = fl * (pl(:)/p0 * tau0) + (1.0_dp - fl) * ((pl(:)/p0)**2 * tau0)
+
+    if (mu_in <= 0.0_dp) then
+      mu = 1e-12_dp
+    end if
 
     Tl(:) = ((3.0_dp/4.0_dp) * Tint**4 * (tau_IRl(:) + 2.0_dp/3.0_dp))
     Tl(:) = Tl(:) + (mu * 3.0_dp * Tirr**4)/4.0_dp *  &
@@ -142,12 +146,12 @@ contains
   end subroutine Guillot_IC
 
   !! This subroutine follows Parmentier & Guillot (2014, 2015) non-grey picket fence scheme
-  subroutine Parmentier_IC(nlay,pl,Tint,mu,Tirr,grav,Tl)
+  subroutine Parmentier_IC(nlay,pl,Tint,mu_in,Tirr,grav,Tl)
     implicit none
 
     integer, intent(in) :: nlay
     real(dp), dimension(nlay), intent(in) :: pl
-    real(dp), intent(in) :: Tint, mu, Tirr, grav
+    real(dp), intent(in) :: Tint, mu_in, Tirr, grav
 
 
     real(dp), dimension(nlay), intent(out) :: Tl
@@ -161,11 +165,16 @@ contains
     real(dp) :: gam_1, gam_2, gam_P, tau_lim
 
     integer :: i, j
-    real(dp) :: a0, a1, b0, A, B, At1, At2
+    real(dp) :: a0, a1, b0, A, B, At1, At2, mu
     real(dp), dimension(3) :: a2, a3, b1, b2, b3, Av1, Av2
     real(dp), dimension(3) :: C, D, E
     real(dp), dimension(nlay+1) :: tau
     real(dp), dimension(nlay) :: kRoss
+
+
+    if (mu_in <= 0.0_dp) then
+      mu = 1e-12_dp
+    end if
 
     !! Effective temperature parameter
     Tmu = (mu * Tirr**4)**(1.0_dp/4.0_dp)
