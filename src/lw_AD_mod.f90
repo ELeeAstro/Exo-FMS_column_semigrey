@@ -15,32 +15,26 @@ module lw_AD_mod
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
-  real(dp), parameter :: hp = 6.62607015e-34_dp
-  real(dp), parameter :: kb = 1.380649e-23_dp
-  real(dp), parameter :: c_s = 2.99792458e8_dp
-  real(dp), parameter :: c1 = (hp * c_s) / kb
-  real(dp), parameter :: c2 = c_s**2
-  real(dp), parameter :: n2 = 2.0_dp * hp * c2
 
   !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
   !! here you can comment in/out groups of mu values for testing
   !! make sure to make clean and recompile if you change these
   
   !! Optimised quadrature for 1 node (Hogan 2024)
-  integer, parameter :: nmu = 1
-  real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
-  real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
-  real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+  ! integer, parameter :: nmu = 1
+  ! real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
   !! Gauss–Jacobi-5 quadrature for 2 nodes (Hogan 2024)
-  ! integer, parameter :: nmu = 2
-  ! real(dp), dimension(nmu), parameter :: uarr = (/0.2509907356_dp, 0.7908473988_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = (/0.2300253764_dp, 0.7699746236_dp/)
+  integer, parameter :: nmu = 2
+  real(dp), dimension(nmu), parameter :: uarr = (/0.2509907356_dp, 0.7908473988_dp/)
+  real(dp), dimension(nmu), parameter :: w = (/0.2300253764_dp, 0.7699746236_dp/)
 
   !! Optical depth limit on optical depth of layers
-  real(dp) :: dtau_lim = 0.01_dp
+  real(dp), parameter :: dtau_lim = 0.01_dp
 
-  private :: lw_doubling_adding, BB_integrate
+  private :: lw_doubling_adding, matinv2, matinv4, ludcmp, lubksb, inv_LU
   public :: lw_AD
 
 contains
@@ -104,110 +98,381 @@ contains
 
     !! Work variables
     integer :: k, m
-    real(dp), dimension(nlay) :: dtau, w0, hg, eps, dtau_a
-    real(dp), dimension(nlay) :: b1, b0, T
-    real(dp), dimension(nlev) :: lw_up_g, lw_down_g
-    real(dp), dimension(nlay) :: fc, sigma_sq, pmom2, c
-    integer, parameter :: nstr = nmu*2
+    real(dp), dimension(nlay) :: bm, bl
+    real(dp), dimension(nlay) :: dtau, w0, hg
+
+    real(dp), dimension(nmu, nmu) :: G
+    real(dp), dimension(nmu, nmu) :: I
+
+
+    real(dp), dimension(nlev, nmu) :: sp, sm, sp_add, sm_add
 
     dtau(:) = tau_in(2:nlev) - tau_in(1:nlay)
 
-    !! Delta-M+ scaling (Following DISORT: Lin et al. 2018)
-    !! Assume HG phase function for scaling
-    
-    where (g_in(:) >= 1e-6_dp)
-      fc(:) = g_in(:)**(nstr)
-      pmom2(:) = g_in(:)**(nstr+1)
-      sigma_sq(:) = real((nstr+1)**2 - nstr**2,dp) / &
-      & ( log(fc(:)**2/pmom2(:)**2) )
-      c(:) = exp(real(nstr**2,dp)/(2.0_dp*sigma_sq(:)))
-      fc(:) = c(:)*fc(:)
-
-      w0(:) = w_in(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*w_in(:)))
-      dtau(:) = (1.0_dp - w_in(:)*fc(:))*dtau(:)
-
-    elsewhere
-      w0(:) = w_in(:)
-    end where
-
+    w0(:) = w_in(:)
     hg(:) = g_in(:)
 
 
+    do k = 1, nlay
+      if (dtau(k) <= 1.0e-6_dp) then
+        ! For low optical depths use the isothermal approimation
+        bm(k) = 0.5_dp*(be(k+1) + be(k))
+        bl(k) = 0.0_dp
+      else
+        bm(k) = 0.5_dp*(be(k+1) + be(k))
+        bl(k) = (be(k+1) - be(k))/dtau(k) ! Linear in tau term
+      endif
+    end do
+
     ! TOA Reflection boundary
-    R() = 
+    R(1,:,:) = 
     ! TOA Transmission boundary
-    T() = 
+    T(1,:,:) = 
     ! TOA emissivity and slope
-    y() =
-    z() = 
+    y(1,:) =
+    z(1,:) = 
+
+    sp(1,:) =
+    sm(1,:) =  
+
+    !! Identity matrix
+    I(:,:) = 0.0_dp
 
     !! Begin loop from top of atmosphere to bottom to find transmision and emission and each layer boundary
     !! Perform doubling scheme as required when dtau > dtau_lim
-    do k = 1, nlev
+    do k = 1, nlay
 
-      if (dtau(k) < dtau_lim) then
+      !if (dtau(k) <= dtau_lim*uarr(1)) then
         !! Safe to perform the adding method directly
 
+        gt = dtau(k)
 
-      else
-        !! Must perform the doubling method until dtau_lim is reached
+        !! Calculate Gamma 
+        G(:,:) = I(:,:) - matmul(R(k,:,:),R(k,:,:))
+        G(:,:) = matinv2(G(:,:)) ! Assume 4 stream for now
+
+        !! Calculate Reflection coefficent for next layer
+        !! Equation is: R(k+1,:,:) = T(k,:,:) * G(k,:,:) * R(k,:,:) * T(k,:,:) + R(k,:,:)
+        R(k+1,:,:) = matmul(T(k,:,:),G(:,:))
+        R(k+1,:,:) = matmul(R(k+1,:,:),R(k,:,:))
+        R(k+1,:,:) = matmul(R(k+1,:,:),T(k,:,:))
+        R(k+1,:,:) = R(k+1,:,:) + R(k,:,:)
+
+        !! Calculate Transmission coefficent for next layer
+        !! Equation is: T(k+1,:,:) = T(k,:,:) * G(k,:,:) * T(k,:,:)
+        T(k+1,:,:) = matmul(T(k,:,:),G(:,:))
+        T(k+1,:,:) = matmul(T(k+1,:,:),T(k,:,:))
+      
+        z(k+1,:) = (matmul(T(k,:,:),G(:,:)) - matmul(matmul(T(k,:,:),G(:,:)),R(k,:,:))) * (z(k,:) - gt*y(k,:)) + gt*y(k,:) + z(k,:)
+        y(k+1,:) = (matmul(T(k,:,:),G(:,:)) + matmul(matmul(T(k,:,:),G(:,:)),R(k,:,:)) + I(:,:)) * y(k,:)
+
+        sp(k+1,:) = y(k+1,:) * bm(k) + bl(k)*z(k+1,:)
+        sm(k+1,:) = y(k+1,:) * bm(k) - bl(k)*z(k+1,:)
+
+        cycle
+
+
+      !else
+        !! Must perform the doubling method for sub-layers until dtau_lim is reached
         !! Its probably best to split into equal dtau sub-layers
 
+        !! Find number if doubling layers and initial sub-layer dtau
+        nsub = int((log10(dtau(k)/(dtau_lim*uarr(1)))/log10(2.0_dp) + 1.0_dp))
+        dtau_sub = dtau(k)/(2.0_dp**(nsub))
 
-      end if
+        gt = dtau_sub
+  
+        !! Do initial calculate at dtau_sub - take layer above as initial conditions
+
+        !! Calculate Gamma 
+        G_s(:,:) = I(:,:) - matmul(R(k,:,:),R(k,:,:))
+        G_s(:,:) = matinv2(G_s(:,:)) ! Assume 4 stream for now
+
+        !! Calculate Reflection coefficent for next layer
+        !! Equation is: R(k+1,:,:) = T(k,:,:) * G(k,:,:) * R(k,:,:) * T(k,:,:) + R(k,:,:)
+        R_s(:,:) = matmul(T(k,:,:),G(k,:,:))
+        R_s(:,:) = matmul(R_s(:,:),R(k,:,:))
+        R_s(:,:) = matmul(R_s(:,:),T(k,:,:))
+        R_s(:,:) = R_s(:,:) + R(k,:,:)
+
+        !! Calculate Transmission coefficent for next layer
+        !! Equation is: T(k+1,:,:) = T(k,:,:) * G(k,:,:) * T(k,:,:)
+        T_s(:,:) = matmul(T(k,:,:),G(k,:,:))
+        T_s(:,:) = matmul(T_s(:,:),T(k,:,:))
+      
+        z_s(:) = (matmul(T(k,:,:),G(k,:,:)) - matmul(matmul(T(k,:,:),G(k,:,:)),R(k,:,:))) * (z(k,:) - gt*y(k,:)) + gt*y(k,:) + z(k,:)
+        y_s(:) = (matmul(T(k,:,:),G(k,:,:)) + matmul(matmul(T(k,:,:),G(k,:,:)),R(k,:,:)) + I(:,:)) * y(k,:)
+
+        sp_s(:) = y_s(:) * bm(k) + bl(k)*z_s(:)
+        sm_s(:) = y_s(:) * bm(k) - bl(k)*z_s(:)
+
+        !! We now have the values for the initial sub-layer
+
+        do d = 2, nsub-1
+
+          ! Increase sub layer dtau by 2
+          dtau_sub = dtau_sub * 2.0_dp
+
+          gt = dtau_sub
+
+          ! Perform doubling
+
+
+          ! Peform adding
+
+        end do
+
+        !! The values at the next computational level are the properties at the origonal level and last added sub-layer
+        gt = dtau(k)
+
+        !! Calculate Gamma 
+        G(:,:) = I(:,:) - matmul(R_s(:,:),R_s(:,:))
+        G(:,:) = matinv2(G(:,:)) ! Assume 4 stream for now
+
+        !! Calculate Reflection coefficent for next layer
+        !! Equation is: R(k+1,:,:) = T(k,:,:) * G(k,:,:) * R(k,:,:) * T(k,:,:) + R(k,:,:)
+        R(k+1,:,:) = matmul(T_s(:,:),G(:,:))
+        R(k+1,:,:) = matmul(R(k+1,:,:),R_s(:,:))
+        R(k+1,:,:) = matmul(R(k+1,:,:),T_s(:,:))
+        R(k+1,:,:) = R(k+1,:,:) + R_s(:,:)
+
+        !! Calculate Transmission coefficent for next layer
+        !! Equation is: T(k+1,:,:) = T(k,:,:) * G(k,:,:) * T(k,:,:)
+        T(k+1,:,:) = matmul(T_s(:,:),G(:,:))
+        T(k+1,:,:) = matmul(T(k+1,:,:),T_s(:,:))
+      
+        z(k+1,:) = (matmul(T_s(:,:),G(:,:)) - matmul(matmul(T_s(:,:),G(:,:)),R_s(:,:))) * (z_s(:) - gt_s*y_s(:)) + gt_s*y_s(:) + z_s(:)
+        y(k+1,:) = (matmul(T_s(:,:),G(:,:)) + matmul(matmul(T_s(:,:),G(:,:)),R_s(:,:)) + I(:,:)) * y_s(:)
+
+        sp(k+1,:) = y(k+1,:) * bm(k) + bl(k)*z(k+1,:)
+        sm(k+1,:) = y(k+1,:) * bm(k) - bl(k)*z(k+1,:)
+
+
+      !end if
+
+    end do
+
+    !! Now we know the Reflection and Transmission and source coefficents for each level
+    !! Do the final adding step starting at the top of the atmosphere to get the source coefficent for the entire atmosphere
+    do k = 2, nlev
+      Rac(:,:) =  
+      Rca(:,:) = 
+    end do
+
+    !! Downward and upward fluxes are calculated as quadrature
+    flx_up(:) = 0.0_dp
+    flx_down(:) = 0.0_dp
+    do m = 1, nmu
+      flx_up(:) = flx_up(:) + sp_add(:,m)*w(m)
+      flx_down(:) = flx_down(:) + sm_add(:,m)*w(m)
     end do
 
 
   end subroutine lw_adding_doubling
 
-  subroutine BB_integrate(n_b, Te, wn_e, be)
+  pure function matinv2(A) result(B)
+    !! Performs a direct calculation of the inverse of a 2×2 matrix.
+    real(dp), intent(in) :: A(2,2)   !! Matrix
+    real(dp)             :: B(2,2)   !! Inverse matrix
+    real(dp)             :: detinv
+
+    ! Calculate the inverse determinant of the matrix
+    detinv = 1.0_dp/(A(1,1)*A(2,2) - A(1,2)*A(2,1))
+
+    ! Calculate the inverse of the matrix
+    B(1,1) = detinv * A(2,2)
+    B(2,1) = -detinv * A(2,1)
+    B(1,2) = -detinv * A(1,2)
+    B(2,2) = detinv * A(1,1)
+
+  end function matinv2
+
+  pure function matinv4(A) result(B)
+    !! Performs a direct calculation of the inverse of a 4×4 matrix.
+    real(dp), intent(in) :: A(4,4)   !! Matrix
+    real(dp)             :: B(4,4)   !! Inverse matrix
+    real(dp)             :: detinv, s0, s1, s2, s3, s4, s5, c5, c4, c3, c2, c1, c0
+
+    s0 = A(1,1) * A(2,2) - A(2,1) * A(1,2)
+    s1 = A(1,1) * A(2,3) - A(2,1) * A(1,3)
+    s2 = A(1,1) * A(2,4) - A(2,1) * A(1,4)
+    s3 = A(1,2) * A(2,3) - A(2,2) * A(1,3)
+    s4 = A(1,2) * A(2,4) - A(2,2) * A(1,4)
+    s5 = A(1,3) * A(2,4) - A(2,3) * A(1,4)
+
+    c5 = A(3,3) * A(4,4) - A(4,3) * A(3,4)
+    c4 = A(3,2) * A(4,4) - A(4,2) * A(3,4)
+    c3 = A(3,2) * A(4,3) - A(4,2) * A(3,3)
+    c2 = A(3,1) * A(4,4) - A(4,1) * A(3,4)
+    c1 = A(3,1) * A(4,3) - A(4,1) * A(3,3)
+    c0 = A(3,1) * A(4,2) - A(4,1) * A(3,2)
+
+    detinv = 1.0_dp / (s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0)
+
+    B(1,1) = ( A(2,2) * c5 - A(2,3) * c4 + A(2,4) * c3) * detinv
+    B(1,2) = (-A(1,2) * c5 + A(1,3) * c4 - A(1,4) * c3) * detinv
+    B(1,3) = ( A(4,2) * s5 - A(4,3) * s4 + A(4,4) * s3) * detinv
+    B(1,4) = (-A(3,2) * s5 + A(3,3) * s4 - A(3,4) * s3) * detinv
+
+    B(2,1) = (-A(2,1) * c5 + A(2,3) * c2 - A(2,4) * c1) * detinv
+    B(2,2) = ( A(1,1) * c5 - A(1,3) * c2 + A(1,4) * c1) * detinv
+    B(2,3) = (-A(4,1) * s5 + A(4,3) * s2 - A(4,4) * s1) * detinv
+    B(2,4) = ( A(3,1) * s5 - A(3,3) * s2 + A(3,4) * s1) * detinv
+
+    B(3,1) = ( A(2,1) * c4 - A(2,2) * c2 + A(2,4) * c0) * detinv
+    B(3,2) = (-A(1,1) * c4 + A(1,2) * c2 - A(1,4) * c0) * detinv
+    B(3,3) = ( A(4,1) * s4 - A(4,2) * s2 + A(4,4) * s0) * detinv
+    B(3,4) = (-A(3,1) * s4 + A(3,2) * s2 - A(3,4) * s0) * detinv
+
+    B(4,1) = (-A(2,1) * c3 + A(2,2) * c1 - A(2,3) * c0) * detinv
+    B(4,2) = ( A(1,1) * c3 - A(1,2) * c1 + A(1,3) * c0) * detinv
+    B(4,3) = (-A(4,1) * s3 + A(4,2) * s1 - A(4,3) * s0) * detinv
+    B(4,4) = ( A(3,1) * s3 - A(3,2) * s1 + A(3,3) * s0) * detinv
+
+  end function matinv4
+
+  subroutine ludcmp(A,n,np,indx,D)
     implicit none
 
-    integer, intent(in) :: n_b
-    real(dp), intent(in) :: Te
-    real(dp), dimension(n_b+1), intent(in) :: wn_e
+    integer, intent(in) :: n, np
+    real(dp), dimension(np,np), intent(inout) :: A
 
-    real(dp), dimension(n_b), intent(out) :: be
+    integer, dimension(n), intent(out) :: indx
+    real(dp), intent(out) :: D
 
-    integer :: ww, j, intitera
-    real(dp), dimension(n_b+1) :: iB
-    real(dp) :: x, x2, x3, itera, summ, dn
+    integer, parameter :: nmax = 100
+    real(dp), parameter :: tiny = 1.0e-20_dp
+    real(dp), dimension(nmax) :: vv
 
-    !! Code for integrating the blckbody function between two wavenumbers
-    !! This is a method that uses a sum convergence
-    !! Taken from: spectralcalc.com/blackbody/inband_radiance.html
+    integer :: i, j, k, imax
+    real(dp) :: aamax, dum, sum
 
-      if (Te < 1e-6_dp) then
-        be(:) = 0.0_dp
-        return
-      end if
+    D = 1.0_dp
 
-      do ww = 1, n_b+1
-
-        x = c1 * 100.0_dp * wn_e(ww)/ Te
-        x2 = x**2
-        x3 = x**3
-
-        itera = 2.0_dp + 20.0_dp/x
-        if (itera > 150) then
-          itera = 150
+    do i = 1, n
+      aamax = 0.0_dp
+      do j = 1, n
+        if (abs(A(i,j)) > aamax) then
+          aamax = abs(A(i,j))
         end if
-        intitera = int(itera)
+      end do
+      if (aamax == 0.0_dp) then
+        print*, 'singualr matrix in LU decomp!'
+        stop
+      end if
+      vv(i) = 1.0_dp/aamax
+    end do
 
-        summ = 0.0_dp
-        do j = 1, intitera + 1
-          dn = 1.0_dp/real(j,kind=dp)
-          summ = summ +  exp(-min(real(j,kind=dp)*x,300.0_dp))* &
-          & (x3 + (3.0_dp * x2 + 6.0_dp*(x+dn)*dn)*dn)*dn
+  
+    do j = 1, n
+      do i = 1, j-1
+        sum = A(i,j)
+        do k = 1, i-1
+          sum = sum  - A(i,k)*A(k,j)
         end do
-
-        iB(ww) = n2 * (Te/c1)**(4) * summ
+        A(i,j) = sum
       end do
-
-      do ww = 1, n_b
-        be(ww) = max(iB(ww+1) - iB(ww),0.0_dp)
+      aamax = 0.0_dp
+      do i = j, n
+        sum = A(i,j)
+        do k = 1, j-1
+          sum = sum  - A(i,k)*A(k,j)
+        end do
+        A(i,j) = sum
+        dum = vv(i)*abs(sum)
+        if (dum >= aamax) then
+          imax = i
+          aamax = dum
+        end if
       end do
+      if (j /= imax) then
+        do k = 1, n
+          dum = A(imax,k)
+          A(imax,k) = A(j,k)
+          A(j,k) = dum
+        end do 
+        D = -D
+        vv(imax) = vv(j)
+      end if
+      indx(j) = imax
+      if (A(j,j) <= tiny) then
+        A(j,j) = tiny
+      end if
+      if (j /= n) then
+        dum = 1.0_dp/A(j,j)
+        do i = j+1, n
+          A(i,j) = A(i,j)*dum
+        end do
+      end if
+    end do
 
-  end subroutine BB_integrate
+  end subroutine ludcmp
+
+  subroutine lubksb(A, n, np, indx, B)
+    implicit none
+
+    integer, intent(in) :: n, np
+    integer, dimension(n), intent(in) :: indx
+    real(dp), dimension(np,np), intent(in) :: A
+
+    real(dp), dimension(n), intent(out) :: B
+
+    integer :: i, j, ii, ll
+    real(dp) :: sum
+
+    ii = 0
+
+    do i = 1, n
+      ll = indx(i)
+      sum = B(ll)
+      b(ll) = b(i)
+      if (ii /= 0) then
+        do j = ii,i-1
+          sum = sum - A(i,j)*B(j)
+        end do
+      else if (sum /= 0.0_dp) then
+        ii = i
+      end if
+      B(i) = sum
+    end do
+
+    do i = n, 1, -1
+      sum = B(i)
+      if (i < n) then
+        do j = i+1, n
+          sum = sum - A(i,j)*B(j)
+        end do
+      end if
+      B(i) = sum/A(i,i)
+    end do
+    
+  end subroutine lubksb
+
+  subroutine inv_LU(A,n,np,Y)
+    implicit none
+
+    integer, intent(in) :: n, np
+    real(dp), dimension(np,np), intent(inout) :: A
+
+    integer, dimension(n) :: indx
+    real(dp), dimension(np,np), intent(out) :: Y
+
+    real(dp) :: D
+    integer :: i, j
+
+    do i = 1, n
+      do j = 1, n
+        Y(i,j) = 0.0_dp
+      end do
+      Y(i,i) = 1.0_dp
+    end do
+
+    call ludcmp(A,n,np,indx,D)
+
+    do j = 1, n
+      call lubksb(A,n,np,indx,Y(1,j))
+    end do
+
+  end subroutine inv_LU
 
 end module lw_AD_mod
