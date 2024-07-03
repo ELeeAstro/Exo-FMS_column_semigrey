@@ -30,8 +30,9 @@ program Exo_FMS_RC
   use lw_Toon_mod, only : lw_Toon
   use lw_disort_ts_mod, only : lw_disort_ts
   !use lw_disort_mod, only : lw_disort
-  !use lw_Feautrier_mod, only : lw_Feautrier
+  use lw_Feautrier_mod, only : lw_Feautrier
   !use lw_AD_mod, only : lw_AD
+  use lw_DFE_mod, only : lw_DFE
 
   use k_Rosseland_mod, only : k_Ross_TK19, k_Ross_Freedman, k_Ross_Valencia
 
@@ -341,12 +342,15 @@ program Exo_FMS_RC
     case('lw_disort')
       ! n-stream disort method with multiple scattering (benchmark method)
       !call lw_disort(nlay, nlev, nb, ng, gw, wn_e, Tl, pl, pe, tau_e, ssa, gg, Tint, lw_up, lw_down, lw_net, olr) 
-    case('lw_Feautier')
-      ! Feautier method
-      !call lw_Feautier(nlay, nlev, nb, ng, gw, wn_e, Tl, pl, pe, tau_e, ssa, gg, Tint, lw_up, lw_down, lw_net, olr) 
+    case('lw_Feautrier')
+      ! Feautrier method
+      call lw_Feautrier(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g ,Tint, lw_up, lw_down, lw_net, olr) 
     case('lw_AD')
       ! Adding-doubling method
       !call lw_AD(nlay, nlev, nb, ng, gw, wn_e, Tl, pl, pe, tau_e, ssa, gg, a_surf, Tint, lw_up, lw_down, lw_net, olr)
+    case('lw_DFE')
+      ! Discontinuous Finite Element (DFE) method
+      call lw_DFE(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g ,Tint, lw_up, lw_down, lw_net, olr)
     case('none')
     case default
       print*, 'Invalid lw_scheme: ', trim(lw_scheme)

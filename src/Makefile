@@ -51,6 +51,8 @@ OBJECTS = \
 		lw_VIM_mod.o \
 		lw_Toon_mod.o \
 		lw_disort_ts_mod.o \
+		lw_Feautrier_mod.o \
+		lw_DFE_mod.o \
     FMS_RC.o
 
 # executable statement

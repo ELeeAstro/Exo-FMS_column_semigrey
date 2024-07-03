@@ -1,15 +1,9 @@
 !!!
-! Elspeth KH Lee - May 2021 : Initial version
-!                - Oct 2021 : adding method & Bezier interpolation
-!                - Aug 2023 : Change quadrature following Li (2000)
-!                - Jun 2024 : Change quadrature following Hogan (2004)
-! lw: Two-stream method following the short characteristics method (e.g. Helios-r2: Kitzmann et al. 2018)
-!     Uses the method of short characteristics (Olson & Kunasz 1987) with linear interpolants.
-!     Pros: Very fast, accurate at high optical depths, very stable
-!     Cons: No lw scattering (but could combine with AA if needed)
+! Elspeth KH Lee - July 2024 : Initial version
+! lw: 
 !!!
 
-module lw_sc_linear_mod
+module lw_sc_para_mod
   use, intrinsic :: iso_fortran_env
   use WENO4_mod, only : interpolate_weno4  
   implicit none
@@ -36,13 +30,13 @@ module lw_sc_linear_mod
   real(dp), dimension(nmu), parameter :: uarr = (/0.2509907356_dp, 0.7908473988_dp/)
   real(dp), dimension(nmu), parameter :: w = (/0.2300253764_dp, 0.7699746236_dp/)
 
-  private :: lw_shortchar_linear
-  public :: lw_sc_linear
+  private :: lw_shortchar_para
+  public :: lw_sc_para
 
 contains
 
 
-  subroutine lw_sc_linear(nlay, nlev, Tl, pl, pe, tau_e, Tint, lw_up, lw_down, lw_net, olr)
+  subroutine lw_sc_para(nlay, nlev, Tl, pl, pe, tau_e, Tint, lw_up, lw_down, lw_net, olr)
     implicit none
 
     !! Input variables
@@ -74,7 +68,7 @@ contains
     be_int = (sb * Tint**4)/pi
 
     !! Longwave flux calculation
-    call lw_shortchar_linear(nlay, nlev, be(:), be_int, tau_e(:), lw_up(:), lw_down(:))
+    call lw_shortchar_para(nlay, nlev, be(:), be_int, tau_e(:), lw_up(:), lw_down(:))
 
     !! Net lw fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -82,9 +76,15 @@ contains
     !! Outgoing Longwave Radiation (olr)
     olr = lw_up(1)
 
-  end subroutine lw_sc_linear
+    do k = 1, nlev
+      print*, k, lw_net(k), lw_up(k), lw_down(k)
+    end do
 
-  subroutine lw_shortchar_linear(nlay, nlev, be, be_int, tau_in, flx_up, flx_down)
+    stop
+
+  end subroutine lw_sc_para
+
+  subroutine lw_shortchar_para(nlay, nlev, be, be_int, tau_in, flx_up, flx_down)
     implicit none
 
     !! Input variables
@@ -98,8 +98,8 @@ contains
     !! Work variables and arrays
     integer :: k, m
     real(dp), dimension(nlay) :: dtau, edel
-    real(dp), dimension(nlay) :: del, e0i, e1i, e1i_del
-    real(dp), dimension(nlay) :: Am, Bm, Gp, Bp
+    real(dp), dimension(nlay) :: del
+    real(dp), dimension(nlay) :: Am, Bm, Cm, Ap, Bp, Cp
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
     !! Calculate dtau in each layer
@@ -114,41 +114,22 @@ contains
 
       del(:) = dtau(:)/uarr(m)
       edel(:) = exp(-del(:))
-      e0i(:) = 1.0_dp - edel(:)
 
-      !! Prepare loop
-      ! Olson & Kunasz (1987) linear interpolant parameters
-      where (edel(:) > 0.999_dp)
-        ! If we are in very low optical depth regime, then use an isothermal approximation
-        Am(:) = (0.5_dp*(be(2:) + be(1:nlay)) * e0i(:))/be(1:nlay)
-        Bm(:) = 0.0_dp
-        Gp(:) = 0.0_dp
-        Bp(:) = Am(:)
-      elsewhere
-        ! Use linear interpolants
-        e1i(:) = del(:) - e0i(:)
-        e1i_del(:) = e1i(:)/del(:) ! The equivalent to the linear in tau term
+      do k = 1, nlay
+      end do
 
-        Am(:) = e0i(:) - e1i_del(:) ! Am(k) = Gp(k), just indexed differently
-        Bm(:) = e1i_del(:) ! Bm(k) = Bp(k), just indexed differently
-        Gp(:) = Am(:)
-        Bp(:) = Bm(:)
-      end where
 
       !! Begin two-stream loops
       !! Perform downward loop first
       ! Top boundary condition - 0 flux downward from top boundary
       lw_down_g(1) = 0.0_dp
       do k = 1, nlay
-        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1) ! TS intensity
+        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k-1) + Bm(k)*be(k+1)  + Cm(k)*be(k+1)! TS intensity
       end do
 
-      !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here we use the same condition but use intensity units to be consistent
       lw_up_g(nlev) = lw_down_g(nlev) + be_int
       do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
+        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Ap(k)*be(k-1) + Bp(k)*be(k+1)  + Cp(k)*be(k+1) ! TS intensity
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
@@ -161,6 +142,6 @@ contains
     flx_down(:) = pi * flx_down(:)
     flx_up(:) = pi * flx_up(:)
 
-  end subroutine lw_shortchar_linear
+  end subroutine lw_shortchar_para
 
-end module lw_sc_linear_mod
+end module lw_sc_para_mod

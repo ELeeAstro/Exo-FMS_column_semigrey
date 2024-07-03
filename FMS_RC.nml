@@ -3,8 +3,8 @@
 
 &FMS_RC_nml
 
-sw_scheme = 'sw_Toon'
-lw_scheme = 'lw_Toon'
+sw_scheme = 'sw_direct'
+lw_scheme = 'lw_DFE'
 
 opac_scheme = 'constant'
 adj_scheme = 'Ray_dry'
@@ -16,7 +16,7 @@ b_sh = 'hybrid_sigma/Hybrid_sigma_grid_b_54.txt'
 pref = 1e8
 
 t_step = 60.0
-nstep = 100000
+nstep = 1000000
 Rd_air = 3556.8
 cp_air = 1.3e4
 grav = 10.0
