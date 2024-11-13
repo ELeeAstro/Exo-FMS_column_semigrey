@@ -329,7 +329,7 @@ program Exo_FMS_RC
       call lw_AA_L(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)     
     case('lw_sc_linear')
       ! Short characteristics (sc) with linear interpolants with no scattering
-      call lw_sc_linear(nlay, nlev, Tl, pl, pe, tau_IRe, Tint, lw_up, lw_down, lw_net, olr)
+      call lw_sc_linear(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)     
     case('lw_VIM')
       ! Variational Iteration Method (VIM) with approximate scattering
       call lw_VIM(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
