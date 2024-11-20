@@ -28,17 +28,32 @@ module lw_Toon_mod
   !! here you can comment in/out groups of mu values for testing
   !! make sure to make clean and recompile if you change these
   
-  !! Optimised quadrature for 1 node (Hogan 2024)
+  !! Optimised quadrature for 1 node - 2 stream (Hogan 2024)
   ! integer, parameter :: nmu = 1
   ! real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
   ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
   ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
-  !! Legendre quadrature for 2 nodes
-  integer, parameter :: nmu = 2
-  real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
-  real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
-  real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+  !! Legendre quadrature for 2 nodes - 4 stream
+  ! integer, parameter :: nmu = 2
+  ! real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+
+  !! Legendre quadrature for 4 nodes - 8 stream
+  ! integer, parameter :: nmu = 4
+  ! real(dp), dimension(nmu), parameter :: uarr = &
+  !   & (/0.06943184_dp, 0.33000948_dp, 0.66999052_dp, 0.93056816_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = &
+  !   & (/0.17392742_dp, 0.32607258_dp, 0.32607258_dp, 0.17392742_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+
+  !! 5 point EGP  Legendre quadrature values - 10 stream
+  integer, parameter :: nmu = 5
+  real(dp), dimension(nmu), parameter :: uarr = &
+    &(/0.0985350858_dp, 0.3045357266_dp, 0.5620251898_dp, 0.8019865821_dp, 0.9601901429_dp/)
+  real(dp), dimension(nmu), parameter :: wuarr = &
+    & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
 
   private :: lw_Toon89, dtridgl
   public :: lw_Toon

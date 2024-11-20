@@ -1,7 +1,6 @@
 !!!
 ! Elspeth KH Lee - Aug 2023 : Initial version
 ! lw: (Extended) Absorption Approximation following Li (2002) (alpha-nEAA) - This is the linear in tau method
-! However, I use the Toon et al. (1989) method rather than Li (2002), as it is more stable at low optical depth.
 !     Pros: Very fast method with LW scattering approximation, no matrix inversions
 !     Cons: Not technically multiple scattering (can be quite innacurate at even moderate albedo)
 !!!
@@ -21,29 +20,27 @@ module lw_AA_L_mod
 
   !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
   !! here you can comment in/out groups of mu values for testing
-  !! make sure to make clean and recompile if you change these
-  !! For HJ's we actually care about stratospheric heating rates, so Gauss–Laguerre quadrature is generally best for 4+ stream, 
-  !! even for cloudy regions (Hogan 2024).
+  !! make sure to make clean and recompile if you change these.
   
-  !! Optimised quadrature for 1 node (Hogan 2024)
+  !! Optimised quadrature for 1 node - 2 stream (Hogan 2024)
   ! integer, parameter :: nmu = 1
   ! real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
   ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
 
-  !! Gauss–Laguerre quadrature for 2 nodes (Hogan 2024)
-  integer, parameter :: nmu = 2
-  real(dp), dimension(nmu), parameter :: uarr = (/0.1813898346_dp, 0.7461018061_dp/)
-  real(dp), dimension(nmu), parameter :: w = (/0.1464466094_dp, 0.8535533906_dp/)
+  !! Gauss–Jacobi-5 quadrature for 2 nodes - 4 stream (Hogan 2024)
+  !integer, parameter :: nmu = 2
+  !real(dp), dimension(nmu), parameter :: uarr = (/0.2509907356_dp, 0.7908473981_dp/)
+  !real(dp), dimension(nmu), parameter :: w = (/0.2300253764_dp, 0.7699746236_dp/)
 
-  !! Gauss–Laguerre quadrature for 3 nodes (Hogan 2024)
+  !! Gauss–Jacobi-5 quadrature for 3 nodes - 6 stream (Hogan 2024)
   ! integer, parameter :: nmu = 3
-  ! real(dp), dimension(nmu), parameter :: uarr = (/0.0430681066_dp, 0.3175435896_dp, 0.8122985952_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = (/0.0103892565_dp, 0.2785177336_dp, 0.7110930099_dp/)
+  ! real(dp), dimension(nmu), parameter :: uarr = (/0.1024922169_dp, 0.4417960320_dp, 0.8633751621_dp/)
+  ! real(dp), dimension(nmu), parameter :: w = (/0.0437820218_dp, 0.3875796738_dp, 0.5686383044_dp/)
 
-  !! Gauss–Laguerre quadrature for 4 nodes (Hogan 2024)
-  ! integer, parameter :: nmu = 4
-  ! real(dp), dimension(nmu), parameter :: uarr = (/0.0091177205_dp, 0.1034869099_dp, 0.4177464746_dp, 0.8510589811_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = (/0.0005392947_dp, 0.0388879085_dp, 0.3574186924_dp, 0.6031541043_dp /)
+  !! Gauss–Jacobi-5 quadrature for 4 nodes - 8 stream (Hogan 2024)
+  integer, parameter :: nmu = 4
+  real(dp), dimension(nmu), parameter :: uarr = (/0.0454586727_dp, 0.2322334416_dp, 0.5740198775_dp, 0.9030775973_dp/)
+  real(dp), dimension(nmu), parameter :: w = (/0.0092068785_dp, 0.1285704278_dp, 0.4323381850_dp, 0.4298845087_dp /)
 
   private :: lw_AA_linear
   public :: lw_AA_L
@@ -109,7 +106,7 @@ contains
     !! Work variables
     integer :: k, m
     real(dp), dimension(nlay) :: dtau, w0, hg, eps, dtau_a
-    real(dp), dimension(nlay) :: b1, b0, T
+    real(dp), dimension(nlay) :: al, T
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
     real(dp), dimension(nlay) :: fc, sigma_sq, pmom2, c
     integer, parameter :: nstr = nmu*2
@@ -137,13 +134,7 @@ contains
     hg(:) = g_in(:)
 
     !! Linear B with tau function
-    where (dtau(:) <= 1.0e-6_dp)
-      b1(:) = 0.0_dp
-      b0(:) = 0.5_dp*(be(2:nlev) + be(1:nlay))
-    elsewhere
-      b1(:) = (be(2:nlev) - be(1:nlay))/dtau(:) 
-      b0(:) = be(1:nlay)
-    end where
+    al(:) = (be(2:nlev) - be(1:nlay))
 
     !! modified co-albedo epsilon
     eps(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
@@ -167,19 +158,31 @@ contains
       ! Top boundary condition - intensity downward from top boundary (tautop, assumed isothermal)
       lw_down_g(1) = 0.0_dp
       do k = 1, nlay
-        lw_down_g(k+1) = lw_down_g(k)*T(k) + b0(k)*(1.0_dp - T(k)) + b1(k)*(uarr(m)*T(k)+dtau(k)-uarr(m)) ! TS intensity
+        if (dtau_a(k) > 1e-4_dp) then
+          !! Do linear in tau
+          lw_down_g(k+1) = lw_down_g(k)*T(k) +  be(k+1) - al(k)*(uarr(m)/dtau_a(k)) & 
+            & - (be(k) - al(k)*(uarr(m)/dtau_a(k)))*T(k) ! TS intensity
+        else
+          !! Do isothermal approximation
+          lw_down_g(k+1) = lw_down_g(k)*T(k) + 0.5_dp*(be(k) + be(k+1))*(1.0_dp - T(k))
+        end if
       end do
 
       !! Perform upward loop
       ! Lower boundary condition - internal heat definition Fint = F_up - F_down
       lw_up_g(nlev) = lw_down_g(nlev) + be_int
       do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*T(k) + b0(k)*(1.0_dp - T(k)) + b1(k)*(uarr(m)-(dtau(k)+uarr(m))*T(k)) ! TS intensity
+        if (dtau_a(k)  > 1e-4_dp) then
+          lw_up_g(k) = lw_up_g(k+1)*T(k) +  be(k) + al(k)*(uarr(m)/dtau_a(k)) & 
+            & - (be(k+1) + al(k)*(uarr(m)/dtau_a(k)))*T(k)! TS intensity
+        else
+          lw_up_g(k) = lw_up_g(k+1)*T(k) + 0.5_dp*(be(k) + be(k+1))*(1.0_dp - T(k))
+        end if
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      flx_down(:) = flx_down(:) + lw_down_g(:) * w(m)
-      flx_up(:) = flx_up(:) + lw_up_g(:) * w(m)
+      flx_down(:) = flx_down(:) + lw_down_g(:) *  w(m)
+      flx_up(:) = flx_up(:) + lw_up_g(:) *  w(m)
 
     end do
 
