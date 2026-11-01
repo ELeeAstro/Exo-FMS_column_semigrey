@@ -1,7 +1,7 @@
 !!!
 ! Elspeth KH Lee - Aug 2023 : Initial version
 !                - Nov 2026 : Bug fixes (upward flux sign, P coefficient, diffuse R matrix, upward sweep),
-!                             delta-M (f = g**4) as sw_SH4, single zenith angle, resonance guard
+!                             delta-M (f = chi_4) as sw_SH4, TTHG option, single zenith angle, resonance guard
 !
 ! sw: alpha-4SDA - 4 stream analytic spherical harmonic method with doubling adding method (Zhang & Li 2013)
 !     Gives the same answer as sw_SH4 (to machine precision), but with 2x2 adding instead of a banded matrix
@@ -21,8 +21,12 @@ module sw_SDA_mod
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: fourpi = 4.0_dp * pi
 
-  !! Use Two-Term HG function for sph harmonic method
+  !! Use Two-Term HG function (TTHG) for sph harmonic method, parameters are the PICASO defaults
+  !! forward fraction = frac_a + frac_b*g_back**frac_c, g_forward = c_forward*g, g_back = c_back*g
   logical, parameter :: TTHG = .False.
+  real(dp), parameter :: tthg_forward = 1.0_dp, tthg_back = -0.5_dp
+  real(dp), parameter :: tthg_frac_a = 1.0_dp, tthg_frac_b = -1.0_dp
+  integer, parameter :: tthg_frac_c = 2
 
   !! How close to the k*mu0 = 1 resonance before mu0 is nudged
   real(dp), parameter :: res_eps = 1.0e-6_dp
@@ -78,7 +82,7 @@ contains
 
     !! Work variables
     integer :: k
-    real(dp), dimension(nlay) :: w0, dtau, hg
+    real(dp), dimension(nlay) :: w0, dtau, g_f, g_b, f_f
     real(dp), dimension(nlev) :: tau, T
     real(dp) :: f0
     real(dp) :: om0, om1, om2, om3
@@ -104,15 +108,16 @@ contains
     real(dp), dimension(2,2) :: E, TT, CC
     real(dp), dimension(2) ::  DD
 
-    real(dp), dimension(nlay) :: fc
     integer, parameter :: nstr = 4
+    real(dp), dimension(nlay) :: fc
+    real(dp), dimension(nstr,nlay) :: chi
     real(dp), parameter :: eps_20 = 1.0e-20_dp
 
     integer :: l, km1, lp1
 
     real(dp), dimension(nlay) :: dtr
 
-    real(dp) :: hg2, alp, mu_z, mu_l
+    real(dp) :: mu_z, mu_l
 
     real(dp), dimension(nlev) :: cum_trans
 
@@ -143,13 +148,24 @@ contains
     !! Calculate dtau in each layer
     dtau(:) = tau_in(2:) - tau_in(1:nlay)
 
-    !! Delta-M scaling (f = g**4, as sw_SH4 and PICASO)
-    !! Assume HG phase function for scaling
-    fc(:) = g_in(:)**(nstr)
+    !! Phase function Legendre moments chi_l (HG: chi_l = g**l)
+    if (TTHG .eqv. .False.) then
+      do l = 1, nstr
+        chi(l,:) = g_in(:)**l
+      end do
+    else
+      g_f(:) = tthg_forward*g_in(:)
+      g_b(:) = tthg_back*g_in(:)
+      f_f(:) = tthg_frac_a + tthg_frac_b*g_b(:)**tthg_frac_c
+      do l = 1, nstr
+        chi(l,:) = f_f(:)*g_f(:)**l + (1.0_dp - f_f(:))*g_b(:)**l
+      end do
+    end if
+
+    !! Delta-M scaling (f = chi_4, g**4 for HG as sw_SH4 and PICASO)
+    fc(:) = chi(nstr,:)
     w0(:) = w_in(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*w_in(:)))
     dtau(:) = (1.0_dp - w_in(:)*fc(:))*dtau(:)
-
-    hg(:) = g_in(:)
 
     !! Single zenith angle for the whole column (value at the lower boundary)
     mu_z = mu_in(nlev)
@@ -165,30 +181,11 @@ contains
     !! First find the Reflection and Transmission coefficents (direct and diffuse) for each layer
     do k = 1, nlay
 
-      !! Omega Legendre polynomial coefficents - scale with delta-M
-      if (hg(k) >= 1.0e-6_dp) then
-        if (TTHG .eqv. .False.) then
-          ! Use HG phase function
-          om0 = 1.0_dp
-          om1 = 3.0_dp * (hg(k) - fc(k))/(1.0_dp - fc(k))
-          om2 = 5.0_dp * (hg(k)**2 - fc(k))/(1.0_dp - fc(k))
-          om3 = 7.0_dp * (hg(k)**3 - fc(k))/(1.0_dp - fc(k))
-        else
-          ! Use TTHG phase function with default parameters
-          hg2 = hg(k)/2.0_dp
-          alp = 1.0_dp - hg2**2
-          om0 = 1.0_dp
-          om1 = 3.0_dp * ((alp*hg(k) + (1.0_dp - alp)*hg2) - fc(k))/(1.0_dp - fc(k))
-          om2 = 5.0_dp * ((alp*hg(k)**2 + (1.0_dp - alp)*hg2**2) - fc(k))/(1.0_dp - fc(k))
-          om3 = 7.0_dp * ((alp*hg(k)**3 + (1.0_dp - alp)*hg2**3) - fc(k))/(1.0_dp - fc(k))
-        end if
-      else
-        ! Isotropic scattering (HG with g = 0)
-        om0 = 1.0_dp
-        om1 = 0.0_dp
-        om2 = 0.0_dp
-        om3 = 0.0_dp
-      end if
+      !! Omega Legendre polynomial coefficents - scale with delta-M (isotropic for g = 0)
+      om0 = 1.0_dp
+      om1 = 3.0_dp * (chi(1,k) - fc(k))/(1.0_dp - fc(k))
+      om2 = 5.0_dp * (chi(2,k) - fc(k))/(1.0_dp - fc(k))
+      om3 = 7.0_dp * (chi(3,k) - fc(k))/(1.0_dp - fc(k))
 
       !! Find the a coefficents
       a0 =  1.0_dp - w0(k)*om0 + eps_20

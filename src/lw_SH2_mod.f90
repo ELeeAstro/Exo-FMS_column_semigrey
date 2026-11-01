@@ -158,7 +158,7 @@ contains
     zpl_down(:) = twopi*(1.0_dp - w0(:))/a0(:) * (B0(:)/2.0_dp + B1(:)/a1(:))
     zpl_up(:) = twopi*(1.0_dp - w0(:))/a0(:) * (B0(:)/2.0_dp + B1(:)/a1(:) + B1(:)*dtau(:)/2.0_dp)
 
-    !! Top boundary, isothermal layer above the model top (as lw_Toon)
+    !! Top boundary, isothermal layer above the model top (as lw_Toon89)
     tautop = dtau(1)*exp(-1.0_dp)
     Btop = (1.0_dp - exp(-tautop/ubari))*be(1)
 

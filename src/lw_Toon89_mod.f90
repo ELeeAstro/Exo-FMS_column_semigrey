@@ -2,6 +2,7 @@
 ! Elspeth KH Lee - May 2021 : Initial version
 !                - Jan 2022 : Working version
 !                - Jun 2024 : Optimisations
+!                - Nov 2026 : Renamed lw_Toon89 (was lw_Toon)
 !
 ! lw: Two-stream method following the "Toon89" method (Toon et al. 1989)
 !     Based on the CHIMERA code by Mike Line, but cleaned up slightly
@@ -9,7 +10,7 @@
 !     Cons: For longwave combined high ssa and g (0.9+,0.9+) can be unstable
 !!!
 
-module lw_Toon_mod
+module lw_Toon89_mod
   use, intrinsic :: iso_fortran_env
   use WENO4_mod, only : interpolate_weno4
   implicit none
@@ -55,13 +56,13 @@ module lw_Toon_mod
   real(dp), dimension(nmu), parameter :: w = (/0.0092068785_dp, 0.1285704278_dp, 0.4323381850_dp, 0.4298845087_dp/)
   real(dp), dimension(nmu), parameter :: wuarr = 0.5_dp * w
 
-  private :: lw_Toon89, dtridgl
-  public :: lw_Toon
+  private :: lw_Toon89_method, dtridgl
+  public :: lw_Toon89
 
 contains
 
 
-  subroutine lw_Toon(nlay, nlev, Tl, pl, pe, tau_e, ssa, gg, Tint, lw_up, lw_down, lw_net, olr)
+  subroutine lw_Toon89(nlay, nlev, Tl, pl, pe, tau_e, ssa, gg, Tint, lw_up, lw_down, lw_net, olr)
     implicit none
 
     !! Input variables
@@ -91,7 +92,7 @@ contains
     be(:) = (sb * Te(:)**4)/pi
 
     !! Longwave flux calculation
-    call lw_Toon89(nlay, nlev, be(:), tau_e(:), ssa(:), gg(:), a_surf, lw_up(:), lw_down(:))
+    call lw_Toon89_method(nlay, nlev, be(:), tau_e(:), ssa(:), gg(:), a_surf, lw_up(:), lw_down(:))
 
     !! Net lw fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -102,9 +103,9 @@ contains
     !! Outgoing Longwave Radiation (olr)
     olr = lw_up(1)
 
-  end subroutine lw_Toon
+  end subroutine lw_Toon89
 
-  subroutine lw_Toon89(nlay, nlev, be, tau_in, w_in, g_in, a_surf_in, flx_up, flx_down)
+  subroutine lw_Toon89_method(nlay, nlev, be, tau_in, w_in, g_in, a_surf_in, flx_up, flx_down)
     implicit none
 
     !! Input variables
@@ -287,7 +288,7 @@ contains
 
     end do
 
-  end subroutine lw_Toon89
+  end subroutine lw_Toon89_method
 
   subroutine dtridgl(l, af, bf, cf, df, xk)
     implicit none
@@ -317,4 +318,4 @@ contains
 
   end subroutine dtridgl
 
-end module lw_Toon_mod
+end module lw_Toon89_mod

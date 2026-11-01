@@ -8,6 +8,7 @@
 !     (Oct 2026) to 1e-14. Delta-M scaling (f = g**4) and one-term HG phase function as PICASO.
 !     Differences to PICASO: no Rayleigh, gas giant lower boundary, own banded solver,
 !     fluxes found row by row, single zenith angle (no zcorr). None change the solution.
+!     TTHG option: as PICASO, but delta-M uses the TTHG chi_nstr for w0 and dtau too (consistent).
 !     Pros: Most accurate sw scheme here, works well for clouds and hazes
 !     Cons: Banded matrix solve, ~5-8x slower than the two-stream methods
 !!!
@@ -26,6 +27,13 @@ module sw_SH4_mod
 
   !! Number of streams
   integer, parameter :: nstr = 4
+
+  !! Use Two-Term HG function (TTHG), parameters are the PICASO defaults
+  !! forward fraction = frac_a + frac_b*g_back**frac_c, g_forward = c_forward*g, g_back = c_back*g
+  logical, parameter :: TTHG = .False.
+  real(dp), parameter :: tthg_forward = 1.0_dp, tthg_back = -0.5_dp
+  real(dp), parameter :: tthg_frac_a = 1.0_dp, tthg_frac_b = -1.0_dp
+  integer, parameter :: tthg_frac_c = 2
 
   private :: sw_SH_four_stream, band_solve
   public :: sw_SH4
@@ -79,7 +87,8 @@ contains
     integer, parameter :: kl = 5, ku = 5
     real(dp) :: Del, b_top, b_surface, b_surface_SH4
     real(dp), dimension(nstr) :: Pu0
-    real(dp), dimension(nlay) :: dtau, w0, f_deltaM
+    real(dp), dimension(nlay) :: dtau, w0, f_deltaM, g_f, g_b, f_f
+    real(dp), dimension(nstr,nlay) :: chi
     real(dp), dimension(nstr,nlay) :: w_multi, a, bb, Dels, eta
     real(dp), dimension(nlay) :: beta, gama, disc, lam1, lam2, exptrm1, exptrm2
     real(dp), dimension(nlay) :: R1, R2, Q1, Q2, S1, S2
@@ -103,8 +112,22 @@ contains
 
     n = 4*nlay
 
-    !! Delta-M scaling (f = g**nstr, as PICASO)
-    f_deltaM(:) = g_in(:)**nstr
+    !! Phase function Legendre moments chi_l (OTHG: chi_l = g**l, TTHG as PICASO)
+    if (TTHG .eqv. .False.) then
+      do l = 1, nstr
+        chi(l,:) = g_in(:)**l
+      end do
+    else
+      g_f(:) = tthg_forward*g_in(:)
+      g_b(:) = tthg_back*g_in(:)
+      f_f(:) = tthg_frac_a + tthg_frac_b*g_b(:)**tthg_frac_c
+      do l = 1, nstr
+        chi(l,:) = f_f(:)*g_f(:)**l + (1.0_dp - f_f(:))*g_b(:)**l
+      end do
+    end if
+
+    !! Delta-M with f = chi_nstr (g**nstr for OTHG as PICASO, the TTHG moment for TTHG)
+    f_deltaM(:) = chi(nstr,:)
     w0(:) = w_in(:)*(1.0_dp - f_deltaM(:))/(1.0_dp - w_in(:)*f_deltaM(:))
     dtau(:) = (tau_in(2:nlev) - tau_in(1:nlay))*(1.0_dp - w_in(:)*f_deltaM(:))
     tau(1) = 0.0_dp
@@ -118,10 +141,10 @@ contains
     Pu0(3) = (3.0_dp*u0**2 - 1.0_dp)/2.0_dp
     Pu0(4) = (5.0_dp*(-u0)**3 - 3.0_dp*(-u0))/2.0_dp
 
-    !! One-term HG phase function moments with delta-M
+    !! Phase function moments with delta-M
     w_multi(1,:) = 1.0_dp
     do l = 1, nstr-1
-      w_multi(l+1,:) = (real(2*l+1,dp)*g_in(:)**l - real(2*l+1,dp)*f_deltaM(:))/(1.0_dp - f_deltaM(:))
+      w_multi(l+1,:) = (real(2*l+1,dp)*chi(l,:) - real(2*l+1,dp)*f_deltaM(:))/(1.0_dp - f_deltaM(:))
     end do
 
     do l = 0, nstr-1

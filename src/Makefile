@@ -48,23 +48,27 @@ OBJECTS = \
 		sw_direct_mod.o \
 		sw_adding_mod.o \
 		sw_SDA_mod.o \
-		sw_Toon_mod.o \
+		sw_Toon89_mod.o \
 		sw_disort_ts_mod.o \
 		sw_disort_mod.o \
 		sw_SH2_mod.o \
 		sw_SH4_mod.o \
+		sw_AD_mod.o \
 		lw_AA_E_mod.o \
 		lw_AA_L_mod.o \
 			lw_sc_linear_mod.o \
 			lw_sc_scat_ric.o \
 		lw_VIM_E_mod.o \
 		lw_VIM_L_mod.o \
-		lw_Toon_mod.o \
+		lw_Toon89_mod.o \
 		lw_SH2_mod.o \
 		lw_SH4_mod.o \
 		lw_disort_ts_mod.o \
 		lw_disort_mod.o \
 		lw_AD_mod.o \
+		lw_DDA_mod.o \
+		lw_Fu97_mod.o \
+		lw_TAS_mod.o \
 		lw_DFE_mod.o \
     FMS_RC.o
 # lw_Feautrier_mod.o, lw_sc_scat_mod.o and lw_sc_scat_iter.o disabled (in development):

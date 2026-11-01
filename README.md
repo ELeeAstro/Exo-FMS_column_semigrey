@@ -6,9 +6,9 @@ Major Update History
  - Jun 2022 - Improvements + Bezier short char.
  - Aug 2023 - Added AA and VIM methods, cleanup - add 4SDA method to AA_E, AA_L and VIM
  - Jul 2024 - More methods + updates to methods, split sw and lw method
- - Nov 2026 - Major update: adding-doubling (AD), Riccati short characteristics with scattering, SH2/SH4 and VIM_L longwave methods, n-stream DISORT benchmarks, Exo-FMS_2 Toon, AA and convection schemes, gas giant lower boundary everywhere
+ - Nov 2026 - Major update: adding-doubling (AD), Riccati short characteristics with scattering (UNDEROGOING TESTING), SH2/SH4, VIM_L, DDA, Fu97 and TAS longwave methods, layer-by-layer adding, fixed SDA, SH2/SH4 and AD shortwave methods, n-stream DISORT benchmarks, Exo-FMS_2 Toon, AA and convection schemes, gas giant lower boundary everywhere
 
-Elspeth K.H. Lee - Dec 2021
+Elspeth K.H. Lee - Nov 2026
 
 This is one part of a series of codes that build upon different two-stream approaches and schemes, primarily useful for the GCM modeling community.
 This is the semi-grey (double-grey) version, where one band is in the visible, representing incident radiation from a host star, and one band in the IR, representing the internal radiation propagating inside the planetary atmosphere.
@@ -33,14 +33,17 @@ No external libraries are needed, the DISORT toolchain (including its own LAPACK
 # Personal recommendations
 
 For the longwave: \
-'lw_sc_scat_ric' - the best balance between speed and accuracy. Close to the n-stream DISORT benchmark for most scattering properties, at around twice the cost of Toon89. \
-'lw_Toon' - fast but accurate. A good choice for GCMs when the longwave scattering is not too strong. \
+'lw_sc_scat_ric' - the best balance between speed and accuracy. Close to the n-stream DISORT benchmark for most scattering properties, at around twice the cost of Toon89 (NOT PUBLISHED YET). \
+'lw_Toon89' - fast but accurate. A good choice for GCMs when the longwave scattering is not too strong. \
 'lw_AD' - for accuracy, but slower. Accurate for any single scattering albedo and asymmetry factor, including very strongly scattering atmospheres, but much slower than the two-stream methods. \
+'lw_TAS' - for weak scattering. Nearly as fast as AA_L and noticeably more accurate when the scattering is weak to moderate, but fails for strongly scattering atmospheres. \
 'lw_AA_L' - for pure speed. Very fast and very good for absorption, but becomes inaccurate as the scattering increases.
 
 For the shortwave: \
 'sw_adding' - the best balance between speed and accuracy. The fastest multiple scattering method here, and works well for clouds and hazes as well as uniform atmospheres. \
-'sw_SH4' - for the highest accuracy. The closest to the n-stream DISORT benchmark for all scattering properties, at several times the cost of the two-stream methods. \
+'sw_Toon89' - fast and dependable. The well tested Toon89 two-stream method, also used in Exo-FMS_2, so results carry over directly between the column and 3D models. \
+'sw_SDA' - for four-stream accuracy. Clearly more accurate than the two-stream methods for all scattering properties, at around three times the cost of Toon89 (same answer as sw_SH4 but twice as fast). \
+'sw_AD' - for the highest accuracy, but slower. Very close to the n-stream DISORT benchmark for any single scattering albedo and asymmetry factor, but much slower than the two- and four-stream methods. \
 'sw_direct' - if there is no shortwave scattering.
 
 # Methods
@@ -51,10 +54,11 @@ For the shortwave method we have:
 3. Spherical harmonic doubling adding method (SDA, Zhang & Li 2013)
 4. Toon89 multiple scattering method
 5. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO
-6. Two-stream DISORT version
-7. n-stream DISORT version (benchmark)
+6. Adding-doubling (AD) 8-stream multiple scattering, converted from AddingDoublingRT
+7. Two-stream DISORT version
+8. n-stream DISORT version (benchmark)
 
-Adding-Doubling (AD) and Feautrier shortwave are in development.
+Feautrier shortwave is in development.
 
 For the longwave method we have:
 1. Absorption approximation with exponential in tau function (AA_E)
@@ -65,9 +69,12 @@ For the longwave method we have:
 6. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO
 7. Variational iteration method (VIM), exponential and linear in tau (VIM_E and VIM_L)
 8. Adding-doubling (AD) 8-stream multiple scattering, converted from AddingDoublingRT
-9. Two-stream DISORT version
-10. n-stream DISORT version (benchmark)
-11. Absorption-only discontinuous finite-element method (DFE)
+9. Four-stream discrete ordinates adding method (DDA, Zhang et al. 2013)
+10. Delta-two- and four-stream combination method (Fu97, Fu et al. 1997)
+11. Chou et al. (1999) scaling with the Tang et al. (2018) adjustment (TAS)
+12. Two-stream DISORT version
+13. n-stream DISORT version (benchmark)
+14. Absorption-only discontinuous finite-element method (DFE)
 
 The direct and iterative short characteristics scattering solvers and the Feautrier method are in development and are disabled. DFE is experimental and does not include scattering.
 
@@ -95,9 +102,10 @@ sw_scheme: \
 'sw_direct' - direct beam only \
 'sw_adding' - adding method \
 'sw_SDA' - four-stream spherical harmonic doubling adding method \
-'sw_Toon' - Toon89 method (Exo-FMS_2 version) \
+'sw_Toon89' - Toon89 method (Exo-FMS_2 version) \
 'sw_SH2' - two-stream spherical harmonic method (PICASO) \
 'sw_SH4' - four-stream spherical harmonic method (PICASO) \
+'sw_AD' - adding-doubling method \
 'sw_disort_ts' - two stream disort method \
 'sw_disort' - n-stream disort method (benchmark, slow)
 
@@ -106,12 +114,15 @@ lw_scheme: \
 'lw_AA_L' - AA_L method \
 'lw_sc_linear' - sc linear method (same result as AA_L, written as short characteristics) \
 'lw_sc_scat_ric' - sc 8-stream scattering method, Riccati solution \
-'lw_Toon' - Toon89 method (Exo-FMS_2 version) \
+'lw_Toon89' - Toon89 method (Exo-FMS_2 version) \
 'lw_SH2' - two-stream spherical harmonic method (PICASO) \
 'lw_SH4' - four-stream spherical harmonic method (PICASO) \
 'lw_VIM_E' - VIM method, exponential in tau \
 'lw_VIM_L' - VIM method, linear in tau \
 'lw_AD' - adding-doubling method \
+'lw_DDA' - four-stream discrete ordinates adding method \
+'lw_Fu97' - delta-two- and four-stream combination method \
+'lw_TAS' - Chou et al. (1999) scaling with the Tang et al. (2018) adjustment \
 'lw_disort_ts' - two stream disort method \
 'lw_disort' - n-stream disort method (benchmark, slow) \
 'lw_DFE' - absorption only DFE method (requires lw_ac = 0)

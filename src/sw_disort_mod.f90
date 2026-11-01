@@ -4,7 +4,7 @@
 !
 ! sw: n-stream DISORT method - intended as an accuracy benchmark
 !     Pros: Highly accurate reference solution, arbitrary stream number
-!     Cons: Very slow, single zenith angle so can't follow the zcorr beam path (unlike sw_Toon and sw_adding)
+!     Cons: Very slow, single zenith angle so can't follow the zcorr beam path (unlike sw_Toon89 and sw_adding)
 !
 ! Gas giant lower boundary - albedo = 0, so nothing is reflected back up (sw_up(nlev) = 0)
 !!!

@@ -3,7 +3,7 @@
 !                - Jan 2022 : Working version
 !                - Jun 2024 : Optimisations
 !                - Oct 2026 : Exo-FMS_2 version, gas giant lower boundary
-!                - Nov 2026 : Resonance guard, zcorr energy conservation fix
+!                - Nov 2026 : Resonance guard, zcorr energy conservation fix, renamed sw_Toon89 (was sw_Toon)
 !
 ! sw: Two-stream method following the "Toon89" method (Toon et al. 1989)
 !     Based on the CHIMERA code by Mike Line, but cleaned up slightly
@@ -11,7 +11,7 @@
 !     Cons: For combined high ssa and g (0.9+,0.9+) can be unstable and inaccurate
 !!!
 
-module sw_Toon_mod
+module sw_Toon89_mod
   use, intrinsic :: iso_fortran_env
   implicit none
 
@@ -21,12 +21,12 @@ module sw_Toon_mod
   !! How close to the lambda*mu0 = 1 resonance before mu0 is nudged
   real(dp), parameter :: res_eps = 1.0e-6_dp
 
-  private :: sw_Toon89, dtridgl
-  public :: sw_Toon
+  private :: sw_Toon89_method, dtridgl
+  public :: sw_Toon89
 
 contains
 
-  subroutine sw_Toon(nlay, nlev, tau_e, mu_z, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)
+  subroutine sw_Toon89(nlay, nlev, tau_e, mu_z, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)
     implicit none
 
     !! Input variables
@@ -45,7 +45,7 @@ contains
 
     !! Shortwave flux calculation
     if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
-      call sw_Toon89(nlay, nlev, Finc, mu_z(:), tau_e(:), ssa(:), gg(:), a_surf, sw_down(:), sw_up(:))
+      call sw_Toon89_method(nlay, nlev, Finc, mu_z(:), tau_e(:), ssa(:), gg(:), a_surf, sw_down(:), sw_up(:))
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -57,9 +57,9 @@ contains
     !! Absorbed Stellar Radiation (ASR)
     asr = sw_down(1) - sw_up(1)
 
-  end subroutine sw_Toon
+  end subroutine sw_Toon89
 
-  subroutine sw_Toon89(nlay, nlev, F0_in, mu_in, tau_in, w_in, g_in, w_surf_in, flx_down, flx_up)
+  subroutine sw_Toon89_method(nlay, nlev, F0_in, mu_in, tau_in, w_in, g_in, w_surf_in, flx_down, flx_up)
     implicit none
 
     !! Input variables
@@ -236,7 +236,7 @@ contains
 
     flx_down(:) = flx_down(:) + dir(:)
 
-  end subroutine sw_Toon89
+  end subroutine sw_Toon89_method
 
   subroutine dtridgl(l, af, bf, cf, df, xk)
     implicit none
@@ -266,4 +266,4 @@ contains
 
   end subroutine dtridgl
 
-end module sw_Toon_mod
+end module sw_Toon89_mod

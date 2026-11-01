@@ -16,9 +16,10 @@ program Exo_FMS_RC
   use sw_direct_mod, only : sw_direct
   use sw_adding_mod, only : sw_adding
   use sw_SDA_mod, only : sw_SDA
-  use sw_Toon_mod, only : sw_Toon
+  use sw_Toon89_mod, only : sw_Toon89
   use sw_SH2_mod, only : sw_SH2
   use sw_SH4_mod, only : sw_SH4
+  use sw_AD_mod, only : sw_AD
   use sw_disort_ts_mod, only : sw_disort_ts
   use sw_disort_mod, only : sw_disort
   !use sw_Feautrier_mod, only : sw_Feautrier
@@ -31,12 +32,15 @@ program Exo_FMS_RC
   !use lw_sc_scat_iter_mod, only : lw_sc_scat_iter   ! lw_sc_scat_iter disabled (in development)
   use lw_VIM_E_mod, only : lw_VIM_E
   use lw_VIM_L_mod, only : lw_VIM_L
-  use lw_Toon_mod, only : lw_Toon
+  use lw_Toon89_mod, only : lw_Toon89
   use lw_SH2_mod, only : lw_SH2
   use lw_SH4_mod, only : lw_SH4
   use lw_disort_ts_mod, only : lw_disort_ts
   use lw_disort_mod, only : lw_disort
   use lw_AD_mod, only : lw_AD
+  use lw_DDA_mod, only : lw_DDA
+  use lw_Fu97_mod, only : lw_Fu97
+  use lw_TAS_mod, only : lw_TAS
   !use lw_Feautrier_mod, only : lw_Feautrier   ! lw_Feautrier disabled (in development)
   use lw_DFE_mod, only : lw_DFE
 
@@ -347,9 +351,9 @@ program Exo_FMS_RC
     case('sw_SDA')
       ! Spherical harmonic doubling adding (SDA) four stream method with multiple scattering
       call sw_SDA(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
-    case('sw_Toon')
+    case('sw_Toon89')
       ! Toon89 shortwave method with multiple scattering
-      call sw_Toon(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+      call sw_Toon89(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_disort_ts')
       ! Two stream disort method with multiple scattering
       call sw_disort_ts(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
@@ -362,7 +366,10 @@ program Exo_FMS_RC
     case('sw_SH4')
       ! Four stream spherical harmonic method with multiple scattering (PICASO)
       call sw_SH4(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
-    case('sw_Feautier','sw_Feautrier','sw_AD')
+    case('sw_AD')
+      ! Adding-doubling method with multiple scattering (AddingDoublingRT)
+      call sw_AD(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+    case('sw_Feautier','sw_Feautrier')
       print*, 'Unsupported sw_scheme (not implemented): ', trim(sw_scheme)
       error stop
     case('none')
@@ -418,9 +425,9 @@ program Exo_FMS_RC
     case('lw_VIM_L')
       ! Variational Iteration Method (VIM), linear in tau Planck function
       call lw_VIM_L(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
-    case('lw_Toon')
+    case('lw_Toon89')
       ! Toon89 longwave method with multiple scattering
-      call lw_Toon(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
+      call lw_Toon89(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
     case('lw_SH2')
       ! Two-stream spherical harmonic method (PICASO) with multiple scattering
       call lw_SH2(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
@@ -436,6 +443,15 @@ program Exo_FMS_RC
     case('lw_AD')
       ! Adding-doubling method with multiple scattering
       call lw_AD(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
+    case('lw_DDA')
+      ! Four-stream discrete ordinates adding method (4DDA) with multiple scattering
+      call lw_DDA(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
+    case('lw_Fu97')
+      ! Delta-two- and four-stream combination method (Fu et al. 1997) with multiple scattering
+      call lw_Fu97(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
+    case('lw_TAS')
+      ! Chou et al. (1999) scaling with the Tang et al. (2018) adjustment (TAS)
+      call lw_TAS(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
     case('lw_Feautrier')
       ! Feautrier method with ALI and Ng acceleration (petitRADTRANS), isotropic scattering - disabled (in development)
       !call lw_Feautrier(nlay, nlev, Tl, pl, pe, tau_IRe, lw_a, lw_g, Tint, lw_up, lw_down, lw_net, olr)
