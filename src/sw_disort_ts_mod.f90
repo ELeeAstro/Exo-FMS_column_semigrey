@@ -1,8 +1,10 @@
 !!!
-! Elspeth KH Lee - Jun 2024
-! sw: two-stream disort method with modifications from Xianyu Tan.
-!     Pros: Accurate and reasonably fast multiple scattering method
-!     Cons: Two-stream only, can be inaccurate
+! Elspeth KH Lee - Jun 2024 : Initial version
+!                - Nov 2026 : Pass a local copy of nlev to TWOSTR
+!
+! sw: Two-stream DISORT method with modifications from Xianyu Tan
+!     Pros: Multiple scattering method, independent check of the sw_Toon scheme (same answer)
+!     Cons: Two-stream only, ~3x slower than sw_Toon
 !!!
 
 module sw_disort_ts_mod
@@ -32,7 +34,7 @@ contains
     real(dp), intent(out) :: asr
 
     !! Work variables
-    integer :: b, g, i
+    integer :: i, ntau
 
     !! Conversion arrays from FMS to DISORT dimensions and work variables
     integer, parameter :: maxcly=200, maxulv=201
@@ -53,7 +55,7 @@ contains
       sw_up_d(:) = 0.0_dp
       sw_down_d(:) = 0.0_dp
 
-      !! Initalise arrays
+      !! Initialise arrays
       ggg(:) = 0.0_dp
       ssalb(:) = 0.0_dp
       utau(:) = 0.0_dp
@@ -71,8 +73,9 @@ contains
       do i = 1, nlay
         dtauc(i) = (tau_e(i+1) - tau_e(i))
       end do
-      ! Black gas-giant lower boundary in the shortwave: no reflection.
-      call call_twostr(nlay,0.0_dp,Te_0,ggg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
+      ! Gas giant lower boundary (albedo = 0), TWOSTR overwrites ntau so we pass a copy of nlev
+      ntau = nlev
+      call call_twostr(nlay,0.0_dp,Te_0,ggg,ssalb,dtauc,ntau,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
         & sw_net_d(:),sw_up_d(:),sw_down_d(:))
     else
       sw_net_d(:) = 0.0_dp

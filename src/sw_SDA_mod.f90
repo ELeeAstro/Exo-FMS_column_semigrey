@@ -1,9 +1,12 @@
 !!!
 ! Elspeth KH Lee - Aug 2023 : Initial version
+!                - Nov 2026 : Bug fixes (upward flux sign, P coefficient, diffuse R matrix, upward sweep),
+!                             delta-M (f = g**4) as sw_SH4, single zenith angle, resonance guard
 !
 ! sw: alpha-4SDA - 4 stream analytic spherical harmonic method with doubling adding method (Zhang & Li 2013)
-! Pros: Fast and accurate method with good multiple scattering approximation, no matrix inversions
-! Cons: Still an approximation (though quite good for a non-matrix method)
+!     Gives the same answer as sw_SH4 (to machine precision), but with 2x2 adding instead of a banded matrix
+! Pros: Fast and accurate method with good multiple scattering approximation, no large matrix inversions
+! Cons: Single zenith angle (no zcorr), four-stream approximation
 !!!
 
 module sw_SDA_mod
@@ -20,6 +23,9 @@ module sw_SDA_mod
 
   !! Use Two-Term HG function for sph harmonic method
   logical, parameter :: TTHG = .False.
+
+  !! How close to the k*mu0 = 1 resonance before mu0 is nudged
+  real(dp), parameter :: res_eps = 1.0e-6_dp
 
   private :: sw_fs_SDA, matinv2, matinv4, ludcmp, lubksb, inv_LU
   public :: sw_SDA
@@ -98,7 +104,7 @@ contains
     real(dp), dimension(2,2) :: E, TT, CC
     real(dp), dimension(2) ::  DD
 
-    real(dp), dimension(nlay) :: fc, sigma_sq, pmom2, c
+    real(dp), dimension(nlay) :: fc
     integer, parameter :: nstr = 4
     real(dp), parameter :: eps_20 = 1.0e-20_dp
 
@@ -106,7 +112,7 @@ contains
 
     real(dp), dimension(nlay) :: dtr
 
-    real(dp) :: hg2, alp
+    real(dp) :: hg2, alp, mu_z, mu_l
 
     real(dp), dimension(nlev) :: cum_trans
 
@@ -137,26 +143,16 @@ contains
     !! Calculate dtau in each layer
     dtau(:) = tau_in(2:) - tau_in(1:nlay)
 
-    !! Delta-M+ scaling (Following DISORT: Lin et al. 2018)
+    !! Delta-M scaling (f = g**4, as sw_SH4 and PICASO)
     !! Assume HG phase function for scaling
-
-    where (g_in(:) >= 1.0e-6_dp)
-      fc(:) = g_in(:)**(nstr)
-      pmom2(:) = g_in(:)**(nstr+1)
-      sigma_sq(:) = real((nstr+1)**2 - nstr**2,dp) / &
-      & ( log(fc(:)**2/pmom2(:)**2) )
-      c(:) = exp(real(nstr**2,dp)/(2.0_dp*sigma_sq(:)))
-      fc(:) = c(:)*fc(:)
-
-      w0(:) = w_in(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*w_in(:)))
-      dtau(:) = (1.0_dp - w_in(:)*fc(:))*dtau(:)
-
-    elsewhere
-      w0(:) = w_in(:)
-      fc(:) = 0.0_dp
-    end where
+    fc(:) = g_in(:)**(nstr)
+    w0(:) = w_in(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*w_in(:)))
+    dtau(:) = (1.0_dp - w_in(:)*fc(:))*dtau(:)
 
     hg(:) = g_in(:)
+
+    !! Single zenith angle for the whole column (value at the lower boundary)
+    mu_z = mu_in(nlev)
 
     !! Reform edge optical depths
     tau(1) = 0.0_dp
@@ -169,13 +165,7 @@ contains
     !! First find the Reflection and Transmission coefficents (direct and diffuse) for each layer
     do k = 1, nlay
 
-      !! Layer transmission
-      dtr(k) = exp(-dtau(k)/mu_in(k))
-
-      !! Inverse zenith angle
-      f0 = 1.0_dp/mu_in(k)
-
-      !! Omega Legendre polynomial coefficents - scale with delta-M+
+      !! Omega Legendre polynomial coefficents - scale with delta-M
       if (hg(k) >= 1.0e-6_dp) then
         if (TTHG .eqv. .False.) then
           ! Use HG phase function
@@ -193,10 +183,10 @@ contains
           om3 = 7.0_dp * ((alp*hg(k)**3 + (1.0_dp - alp)*hg2**3) - fc(k))/(1.0_dp - fc(k))
         end if
       else
-        ! Use Rayleigh scattering phase function for isotropic scattering
+        ! Isotropic scattering (HG with g = 0)
         om0 = 1.0_dp
         om1 = 0.0_dp
-        om2 = 0.5_dp
+        om2 = 0.0_dp
         om3 = 0.0_dp
       end if
 
@@ -205,12 +195,6 @@ contains
       a1 =  3.0_dp - w0(k)*om1 + eps_20
       a2 =  5.0_dp - w0(k)*om2 + eps_20
       a3 =  7.0_dp - w0(k)*om3 + eps_20
-
-      !! Find the b coefficents - normalise Finc to 1 here
-      b0 = w0(k)*om0 / fourpi
-      b1 = w0(k)*om1 * -(mu_in(k)) / fourpi
-      b2 = 0.5_dp * w0(k)*om2 * (3.0_dp * mu_in(k)**2 - 1.0_dp) / fourpi
-      b3 = 0.5_dp * w0(k)*om3 * (5.0_dp * -mu_in(k)**3 - 3.0_dp*-(mu_in(k))) / fourpi
 
       !! Find beta and gamma
       beta = a0*a1 + (4.0_dp/9.0_dp)*a0*a3 + (1.0_dp/9.0_dp)*a2*a3
@@ -222,6 +206,23 @@ contains
 
       k1 = sqrt(k1)
       k2 = sqrt(k2)
+
+      !! Zenith angle for this layer - nudge mu0 off the k*mu0 = 1 resonance (0/0 in the particular solution)
+      mu_l = mu_z
+      if (abs(1.0_dp - k1*mu_l) < res_eps) mu_l = mu_l + 2.0_dp*res_eps/k1
+      if (abs(1.0_dp - k2*mu_l) < res_eps) mu_l = mu_l + 2.0_dp*res_eps/k2
+
+      !! Layer transmission
+      dtr(k) = exp(-dtau(k)/mu_l)
+
+      !! Inverse zenith angle
+      f0 = 1.0_dp/mu_l
+
+      !! Find the b coefficents - normalise Finc to 1 here
+      b0 = w0(k)*om0 / fourpi
+      b1 = w0(k)*om1 * -(mu_l) / fourpi
+      b2 = 0.5_dp * w0(k)*om2 * (3.0_dp * mu_l**2 - 1.0_dp) / fourpi
+      b3 = 0.5_dp * w0(k)*om3 * (5.0_dp * -mu_l**3 - 3.0_dp*-(mu_l)) / fourpi
 
       !! Find e values
       e1 = exp(-k1*dtau(k))
@@ -235,8 +236,8 @@ contains
       Q2 = -3.0_dp/2.0_dp * (a0*a1/k2 - k2)/a3
       R1 = -a0/k1
       R2 = -a0/k2
-      P1 = 0.3125_dp * (a0*a1/k1**2 - 1.0_dp)
-      P2 = 0.3125_dp * (a0*a1/k2**2 - 1.0_dp)
+      P1 = 0.5_dp * (a0*a1/k1**2 - 1.0_dp)
+      P2 = 0.5_dp * (a0*a1/k2**2 - 1.0_dp)
 
       !! Find the delta values
       delta = 9.0_dp*(f0**4 - beta*f0**2 + gam)
@@ -305,11 +306,11 @@ contains
       Fdir(:) = AA12H1(:) + H2(:)
 
       !! Store the direct beam reflection and transmission for this layer - normalised by the beam flux (=1 here)
-      Rdir(k,1) = Fdir(3)/(mu_in(k))
-      Rdir(k,2) = Fdir(4)/(mu_in(k))
+      Rdir(k,1) = Fdir(3)/mu_l
+      Rdir(k,2) = Fdir(4)/mu_l
 
-      Tdir(k,1) = Fdir(1)/(mu_in(k))
-      Tdir(k,2) = Fdir(2)/(mu_in(k))
+      Tdir(k,1) = Fdir(1)/mu_l
+      Tdir(k,2) = Fdir(2)/mu_l
 
       !! Now find the diffusive flux component
 
@@ -328,8 +329,8 @@ contains
       !! Store the diffuse reflection and transmission for this layer - no normalisation
       Rdiff(k,1,1) = Fdiffa(3)
       Rdiff(k,1,2) = Fdiffb(3)
-      Rdiff(k,2,2) = Fdiffa(4)
-      Rdiff(k,2,1) = Fdiffb(4)
+      Rdiff(k,2,1) = Fdiffa(4)
+      Rdiff(k,2,2) = Fdiffb(4)
   
       Tdiff(k,1,1) = Fdiffa(1)
       Tdiff(k,1,2) = Fdiffb(1)
@@ -352,7 +353,7 @@ contains
     RbkN(nlev,:,:) = 0.0_dp
 
     !! Direct beam transmission to level
-    T(:) = exp(-tau(:)/mu_in(k))
+    T(:) = exp(-tau(:)/mu_z)
 
     !! E indentity matrix
     E(1,1) = 1.0_dp ; E(1,2) = 0.0_dp ; E(2,1) = 0.0_dp ; E(2,2) = 1.0_dp
@@ -383,8 +384,6 @@ contains
       CC(:,:) = matmul(Tdiff(l,:,:),TT(:,:))
 
       DD(:) = RkN(lp1,:)*dtr(l) + matmul(RbkN(lp1,:,:),Tdir(l,:))
-      DD(:) = matmul(CC(:,:),DD(:))
-
       RkN(l,:) = Rdir(l,:) + matmul(CC(:,:), DD(:))
 
       CC(:,:) = matmul(CC(:,:),RbkN(lp1,:,:))
@@ -407,9 +406,8 @@ contains
     end do
 
     !! Down and up fluxes are multiplied by the incident flux
-    !! up is defined as negative in the adding method, so we make it positive here
-    flx_down(:) = (D(:,1) + T(:))*mu_in(nlev)*F0_in
-    flx_up(:) = -U(:,1)*mu_in(nlev)*F0_in
+    flx_down(:) = (D(:,1) + T(:))*mu_z*F0_in
+    flx_up(:) = U(:,1)*mu_z*F0_in
 
   end subroutine sw_fs_SDA
 

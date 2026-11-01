@@ -17,8 +17,8 @@ program Exo_FMS_RC
   use sw_adding_mod, only : sw_adding
   use sw_SDA_mod, only : sw_SDA
   use sw_Toon_mod, only : sw_Toon
-  ! sw_SH2 and sw_SH4 are disabled until their matrix assembly and flux
-  ! reconstruction are repaired and validated.
+  use sw_SH2_mod, only : sw_SH2
+  use sw_SH4_mod, only : sw_SH4
   use sw_disort_ts_mod, only : sw_disort_ts
   use sw_disort_mod, only : sw_disort
   !use sw_Feautrier_mod, only : sw_Feautrier
@@ -345,7 +345,7 @@ program Exo_FMS_RC
       ! Approximate adding method with approximate scattering
       call sw_adding(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_SDA')
-      ! Spherical harmonic doubling (SDA) adding four stream method with approximate scattering
+      ! Spherical harmonic doubling adding (SDA) four stream method with multiple scattering
       call sw_SDA(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_Toon')
       ! Toon89 shortwave method with multiple scattering
@@ -356,9 +356,12 @@ program Exo_FMS_RC
     case('sw_disort')
       ! n-stream disort method with multiple scattering - benchmark method
       call sw_disort(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
-    case('sw_SH2','sw_SH4')
-      print*, 'Unsupported sw_scheme (disabled due known correctness defects): ', trim(sw_scheme)
-      error stop
+    case('sw_SH2')
+      ! Two stream spherical harmonic method with multiple scattering (PICASO)
+      call sw_SH2(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+    case('sw_SH4')
+      ! Four stream spherical harmonic method with multiple scattering (PICASO)
+      call sw_SH4(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_Feautier','sw_Feautrier','sw_AD')
       print*, 'Unsupported sw_scheme (not implemented): ', trim(sw_scheme)
       error stop

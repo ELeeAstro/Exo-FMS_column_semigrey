@@ -45,5 +45,9 @@ src/lw_sc_scat_*.f90
 # lw_Feautrier - in development
 src/lw_Feautrier_mod.f90
 
+
+# sw_Feautrier - unfinished stub
+src/sw_Feautrier_mod.f90
+
 # Local benchmark runs and results
 benchmarks/

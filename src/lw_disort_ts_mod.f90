@@ -1,5 +1,6 @@
 !!!
-! Elspeth KH Lee - Jun 2024
+! Elspeth KH Lee - Jun 2024 : Initial version
+!                - Nov 2026 : Pass a local copy of nlev to TWOSTR (it overwrites ntau)
 ! lw: two-stream disort method with modifications from Xianyu Tan.
 !     Pros: Accurate and reasonably fast multiple scattering method
 !     Cons: Two-stream only, can be inaccurate
@@ -36,7 +37,7 @@ contains
 
 
     !! Work variables
-    integer :: i
+    integer :: i, ntau
     real(dp), dimension(nlev) :: Te
 
     !! Conversion arrays from FMS to DISORT dimensions and work variables
@@ -86,7 +87,9 @@ contains
 
     ! A unit-reflecting mathematical lower boundary plus the emitted Tint
     ! term imposes F_up - F_down = sigma*Tint**4.
-    call call_twostr(nlay,1.0_dp,Te_0,ggg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
+    ! TWOSTR overwrites its ntau argument, so pass a local copy of nlev
+    ntau = nlev
+    call call_twostr(nlay,1.0_dp,Te_0,ggg,ssalb,dtauc,ntau,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
       & lw_net_d(:),lw_up_d(:),lw_down_d(:))
 
     lw_net(:) = lw_net_d(1:nlev)

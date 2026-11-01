@@ -38,20 +38,23 @@ For the longwave: \
 'lw_AD' - for accuracy, but slower. Accurate for any single scattering albedo and asymmetry factor, including very strongly scattering atmospheres, but much slower than the two-stream methods. \
 'lw_AA_L' - for pure speed. Very fast and very good for absorption, but becomes inaccurate as the scattering increases.
 
-For the shortwave we recommend the adding method for scattering problems, and the direct beam method if there is no shortwave scattering.
-The SDA method currently returns negative upward fluxes and should not be used.
+For the shortwave: \
+'sw_adding' - the best balance between speed and accuracy. The fastest multiple scattering method here, and works well for clouds and hazes as well as uniform atmospheres. \
+'sw_SH4' - for the highest accuracy. The closest to the n-stream DISORT benchmark for all scattering properties, at several times the cost of the two-stream methods. \
+'sw_direct' - if there is no shortwave scattering.
 
 # Methods
 
 For the shortwave method we have:
 1. Direct beam only method
-2. Adding method
-3. Spherical harmonic adding method (SDA)
+2. Adding method with delta-Eddington layers (Meador & Weaver 1980)
+3. Spherical harmonic doubling adding method (SDA, Zhang & Li 2013)
 4. Toon89 multiple scattering method
-5. Two-stream DISORT version
-6. n-stream DISORT version (benchmark)
+5. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO
+6. Two-stream DISORT version
+7. n-stream DISORT version (benchmark)
 
-SH2 and SH4 shortwave are in development and their namelist options are disabled. Adding-Doubling (AD) and Feautrier shortwave are in development.
+Adding-Doubling (AD) and Feautrier shortwave are in development.
 
 For the longwave method we have:
 1. Absorption approximation with exponential in tau function (AA_E)
@@ -91,8 +94,10 @@ In the file 'FMS_RC.nml' you can select different options that control the simul
 sw_scheme: \
 'sw_direct' - direct beam only \
 'sw_adding' - adding method \
-'sw_SDA' - SDA method (currently broken) \
+'sw_SDA' - four-stream spherical harmonic doubling adding method \
 'sw_Toon' - Toon89 method (Exo-FMS_2 version) \
+'sw_SH2' - two-stream spherical harmonic method (PICASO) \
+'sw_SH4' - four-stream spherical harmonic method (PICASO) \
 'sw_disort_ts' - two stream disort method \
 'sw_disort' - n-stream disort method (benchmark, slow)
 

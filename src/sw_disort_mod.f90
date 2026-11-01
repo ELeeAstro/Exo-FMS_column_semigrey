@@ -4,13 +4,9 @@
 !
 ! sw: n-stream DISORT method - intended as an accuracy benchmark
 !     Pros: Highly accurate reference solution, arbitrary stream number
-!     Cons: Very slow compared to the two-stream methods
+!     Cons: Very slow, single zenith angle so can't follow the zcorr beam path (unlike sw_Toon and sw_adding)
 !
-! Lower boundary
-! --------------
-! A gas giant has no reflecting surface, so ALBEDO = 0: stellar radiation that
-! reaches the bottom of the modelled column leaves it downward and is not
-! returned. This gives sw_up(nlev) = 0, matching the other shortwave modules.
+! Gas giant lower boundary - albedo = 0, so nothing is reflected back up (sw_up(nlev) = 0)
 !!!
 
 module sw_disort_mod
@@ -20,14 +16,11 @@ module sw_disort_mod
   !! Precision variables
   integer, parameter :: dp = REAL64
 
-  !! Number of computational streams used by DISORT.
-  !! Increase for a more accurate benchmark, at proportionally more cost.
-  !! You will need to make clean and recompile if this is changed.
+  !! Number of DISORT streams - more is more accurate but slower
+  !! make sure to make clean and recompile if you change this
   integer, parameter :: nstr = 32
 
-  !! Use the delta-M+ truncation (Lin et al. 2018). DISORT applies its own
-  !! guards internally and falls back to plain delta-M where the moment
-  !! sequence makes the delta-M+ fit unreliable (DISORT.f:482-497).
+  !! Use delta-M+ scaling (Lin et al. 2018) - DISORT falls back to delta-M itself where delta-M+ is unreliable
   logical, parameter :: use_deltamplus = .True.
 
   private
@@ -51,8 +44,7 @@ contains
 
     !! Shortwave flux calculation
     if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
-      !! DISORT takes a single solar zenith angle, so any zcorr profile is
-      !! represented by its value at the base of the column, as in sw_disort_ts.
+      ! Single zenith angle, use the value at the lower boundary (as sw_disort_ts)
       call call_DISORT(nlay, nlev, tau_e, ssa, gg, mu_z(nlev), Finc, sw_up, sw_down)
     else
       sw_up(:) = 0.0_dp
@@ -81,8 +73,7 @@ contains
     integer, parameter :: nmom = nstr + 1
     integer :: numu, maxulv, i, k
 
-    !! DISORT arguments - the DISORT toolchain is compiled with
-    !! -fdefault-real-8, so its REAL declarations are 8 byte (see Makefile)
+    !! DISORT arguments - DISORT is compiled with -fdefault-real-8 (see Makefile)
     logical :: usrang, usrtau, onlyfl, plank, lamber, deltamplus, do_pseudo_sphere
     logical :: prnt(5)
     integer :: ibcnd
@@ -104,7 +95,7 @@ contains
     do i = 1, nlay
       dtauc(i) = real(tau_e(i+1) - tau_e(i), dp)
       ssalb(i) = real(ssa(i), dp)
-      !! Henyey-Greenstein phase function moments: pmom(k) = g**k
+      ! Henyey-Greenstein phase function moments, pmom(k) = g**k
       pmom(0,i) = 1.0_dp
       do k = 1, nmom
         pmom(k,i) = real(gg(i)**k, dp)
@@ -115,7 +106,7 @@ contains
       utau(i) = real(tau_e(i), dp)
     end do
 
-    !! Collimated stellar beam only - no thermal source in the shortwave
+    !! Stellar beam only - no thermal source in the shortwave
     plank = .False.
     temper(:) = 0.0_dp
     wvnmlo = 0.0_dp
@@ -124,15 +115,14 @@ contains
     ttemp = 0.0_dp
     temis = 0.0_dp
 
-    !! DISORT's FBEAM is the flux normal to the beam, so the flux crossing a
-    !! horizontal surface at the top of the atmosphere is FBEAM*UMU0.
+    !! FBEAM is the flux normal to the beam (top of atmosphere flux is FBEAM*UMU0)
     fbeam = real(F0_in, dp)
     umu0 = real(mu_in, dp)
     phi0 = 0.0_dp
     fisot = 0.0_dp
     phi(:) = 0.0_dp
 
-    !! Gas giant: no reflection from the base of the modelled column
+    !! Gas giant lower boundary - no reflection
     lamber = .True.
     albedo = 0.0_dp
 
@@ -147,8 +137,7 @@ contains
     header = ''
     prnt(:) = .False.
 
-    !! DISORT overwrites this argument internally (DISORT.f:474-497), so it
-    !! must be reset on every call.
+    !! DISORT overwrites deltamplus internally, so reset it every call
     deltamplus = use_deltamplus
 
     rfldir(:) = 0.0_dp ; rfldn(:) = 0.0_dp ; flup(:) = 0.0_dp

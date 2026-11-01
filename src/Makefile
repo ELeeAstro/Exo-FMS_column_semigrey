@@ -51,6 +51,8 @@ OBJECTS = \
 		sw_Toon_mod.o \
 		sw_disort_ts_mod.o \
 		sw_disort_mod.o \
+		sw_SH2_mod.o \
+		sw_SH4_mod.o \
 		lw_AA_E_mod.o \
 		lw_AA_L_mod.o \
 			lw_sc_linear_mod.o \

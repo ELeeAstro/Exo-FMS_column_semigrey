@@ -24,8 +24,8 @@ contains
     !! Input variables
     integer, intent(in) :: nlev
     real(dp), dimension(nlev), intent(in) :: tau_e
-    real(dp), dimension(nlev) :: mu_z
-    real(dp) :: Finc
+    real(dp), dimension(nlev), intent(in) :: mu_z
+    real(dp), intent(in) :: Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
@@ -76,8 +76,7 @@ contains
       end do
     end if
 
-    ! Gas-giant lower boundary: shortwave radiation may leave the modeled
-    ! column downward, but none is reflected upward.
+    ! Gas giant lower boundary - nothing is reflected back up
     flx_up(:) = 0.0_dp
 
 
