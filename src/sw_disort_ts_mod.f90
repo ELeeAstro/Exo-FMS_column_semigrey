@@ -71,7 +71,8 @@ contains
       do i = 1, nlay
         dtauc(i) = (tau_e(i+1) - tau_e(i))
       end do
-      call call_twostr(nlay,Te_0,ggg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
+      ! Black gas-giant lower boundary in the shortwave: no reflection.
+      call call_twostr(nlay,0.0_dp,Te_0,ggg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
         & sw_net_d(:),sw_up_d(:),sw_down_d(:))
     else
       sw_net_d(:) = 0.0_dp

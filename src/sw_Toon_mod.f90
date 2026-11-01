@@ -7,6 +7,14 @@
 !     Based on the CHIMERA code by Mike Line, but cleaned up slightly
 !     Pros: Fast, decently accurate, multiple scattering method
 !     Cons: For combined high ssa and g (0.9+,0.9+) can be unstable and inaccurate
+!
+! Exo-FMS_2 version (exp/*/srcmods/sw_Toon_mod.f90, Oct 2026), with the Toon89 solver unchanged
+! and a semi-grey interface (one band, no g-ordinates) and a black lower boundary (gas giant).
+!
+! Conventions: k = 1 is the top; tau_e(1:nlev) optical depth at the levels; mu_z(1:nlev)
+! cos(zenith angle) at the levels (<= 0 at the bottom: night, no flux); Finc the incident
+! flux normal to the beam [W/m2]; fluxes [W/m2] at the levels, sw_net = sw_up - sw_down;
+! asr = sw_down(1) - sw_up(1).
 !!!
 
 module sw_Toon_mod
@@ -21,26 +29,26 @@ module sw_Toon_mod
 
 contains
 
-  subroutine sw_Toon(nlay, nlev, tau_e, mu_z, Finc, ssa, gg, a_surf, sw_up, sw_down, sw_net, asr)
+  subroutine sw_Toon(nlay, nlev, tau_e, mu_z, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
-    real(dp), dimension(nlev) :: mu_z
-    real(dp) :: Finc, a_surf
+    real(dp), dimension(nlev), intent(in) :: mu_z
+    real(dp), intent(in) :: Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
     real(dp), intent(out) :: asr
 
+    !! Work variables
+    real(dp), parameter :: a_surf = 0.0_dp   ! gas giant: no reflecting lower boundary
 
     !! Shortwave flux calculation
     if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
-
       call sw_Toon89(nlay, nlev, Finc, mu_z(:), tau_e(:), ssa(:), gg(:), a_surf, sw_down(:), sw_up(:))
-
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -226,7 +234,6 @@ contains
     flx_down(nlev) = xk1(nlay)*Ep(nlay)*gam(nlay)+xk2(nlay)*Em(nlay)+Cm(nlay)
 
     flx_down(:) = flx_down(:) + dir(:)
-    flx_up(:) = flx_up(:)
 
   end subroutine sw_Toon89
 
@@ -238,9 +245,8 @@ contains
     real(dp), dimension(l), intent(out) :: xk
 
     integer :: i
-    integer, parameter :: nmax = 301
     real(dp) :: x
-    real(dp), dimension(nmax) :: as, ds
+    real(dp), dimension(l) :: as, ds
 
     as(l) = af(l)/bf(l)
     ds(l) = df(l)/bf(l)

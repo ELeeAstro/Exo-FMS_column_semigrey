@@ -11,7 +11,7 @@
 
 module lw_Toon_mod
   use, intrinsic :: iso_fortran_env
-  use WENO4_mod, only : interpolate_weno4  
+  use WENO4_mod, only : interpolate_weno4
   implicit none
 
   !! Precision variables
@@ -27,33 +27,33 @@ module lw_Toon_mod
   !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
   !! here you can comment in/out groups of mu values for testing
   !! make sure to make clean and recompile if you change these
-  
-  !! Optimised quadrature for 1 node - 2 stream (Hogan 2024)
+
+  !! Optimised quadrature for 1 node (Hogan 2024)
   ! integer, parameter :: nmu = 1
   ! real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
   ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
   ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
-  !! Legendre quadrature for 2 nodes - 4 stream
-  ! integer, parameter :: nmu = 2
-  ! real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
-
-  !! Legendre quadrature for 4 nodes - 8 stream
-  ! integer, parameter :: nmu = 4
-  ! real(dp), dimension(nmu), parameter :: uarr = &
-  !   & (/0.06943184_dp, 0.33000948_dp, 0.66999052_dp, 0.93056816_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = &
-  !   & (/0.17392742_dp, 0.32607258_dp, 0.32607258_dp, 0.17392742_dp/)
-  ! real(dp), dimension(nmu), parameter :: wuarr = uarr * w
+  !! Legendre quadrature for 2 nodes
+  !integer, parameter :: nmu = 2
+  !real(dp), dimension(nmu), parameter :: uarr = (/0.21132487_dp, 0.78867513_dp/)
+  !real(dp), dimension(nmu), parameter :: w = (/0.5_dp, 0.5_dp/)
+  !real(dp), dimension(nmu), parameter :: wuarr = uarr * w
 
   !! 5 point EGP  Legendre quadrature values - 10 stream
-  integer, parameter :: nmu = 5
-  real(dp), dimension(nmu), parameter :: uarr = &
-    &(/0.0985350858_dp, 0.3045357266_dp, 0.5620251898_dp, 0.8019865821_dp, 0.9601901429_dp/)
-  real(dp), dimension(nmu), parameter :: wuarr = &
-    & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
+  ! integer, parameter :: nmu = 5
+  ! real(dp), dimension(nmu), parameter :: uarr = &
+  !   &(/0.0985350858_dp, 0.3045357266_dp, 0.5620251898_dp, 0.8019865821_dp, 0.9601901429_dp/)
+  ! real(dp), dimension(nmu), parameter :: wuarr = &
+  !   & (/0.0157479145_dp, 0.0739088701_dp, 0.1463869871_dp, 0.1671746381_dp, 0.0967815902_dp/)
+
+  !! Gauss–Jacobi-5 quadrature for 4 nodes - 8 stream (Hogan 2024)
+  !! Hogan's weights w are for the measure 2 mu dmu (sum 1, F = pi sum w I); here the 2 pi
+  !! is carried in the intensities (F = 2 pi sum wuarr I), so wuarr = w/2 (sum 0.5)
+  integer, parameter :: nmu = 4
+  real(dp), dimension(nmu), parameter :: uarr = (/0.0454586727_dp, 0.2322334416_dp, 0.5740198775_dp, 0.9030775973_dp/)
+  real(dp), dimension(nmu), parameter :: w = (/0.0092068785_dp, 0.1285704278_dp, 0.4323381850_dp, 0.4298845087_dp/)
+  real(dp), dimension(nmu), parameter :: wuarr = 0.5_dp * w
 
   private :: lw_Toon89, dtridgl
   public :: lw_Toon
@@ -61,7 +61,7 @@ module lw_Toon_mod
 contains
 
 
-  subroutine lw_Toon(nlay, nlev, Tl, pl, pe, tau_e, ssa, gg, a_surf, Tint, lw_up, lw_down, lw_net, olr)
+  subroutine lw_Toon(nlay, nlev, Tl, pl, pe, tau_e, ssa, gg, Tint, lw_up, lw_down, lw_net, olr)
     implicit none
 
     !! Input variables
@@ -70,7 +70,6 @@ contains
     real(dp), dimension(nlev), intent(in) :: pe
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
-    real(dp), intent(in) :: a_surf
     real(dp), intent(in) :: Tint
 
     !! Output variables
@@ -78,22 +77,21 @@ contains
     real(dp), intent(out) :: olr
 
     !! Work variables
-    real(dp), dimension(nlev) :: Te
-    real(dp), dimension(nlev) :: be
+    real(dp), dimension(nlev) :: Te, be
+    real(dp), parameter :: a_surf = 0.0_dp   ! gas giant: no reflecting lower boundary
 
-    !! Use WENO4 method to (smoothly) interpolate layers to levels
-    Te(:) = interpolate_weno4(pe, pl, Tl, .False.)
+    !! Use WENO4 method to (smoothly) interpolate layers to levels, in ln p
+    Te(:) = interpolate_weno4(log(pe), log(pl), Tl, .False.)
 
-    !! Edges are linearly interpolated to avoid overshoot
-    Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
-    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
+    !! Edges extrapolated log-linearly in p through the neighbouring level and the edge layer
+    Te(1) = 10.0_dp**(log10(Te(2)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
+    Te(nlev) = 10.0_dp**(log10(Te(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Find integrated planck function for each level
     be(:) = (sb * Te(:)**4)/pi
 
     !! Longwave flux calculation
-    call lw_Toon89(nlay, nlev, be(:), tau_e(:), ssa(:), gg(:), a_surf, &
-      & lw_up(:), lw_down(:))
+    call lw_Toon89(nlay, nlev, be(:), tau_e(:), ssa(:), gg(:), a_surf, lw_up(:), lw_down(:))
 
     !! Net lw fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -134,7 +132,7 @@ contains
 
     real(dp), dimension(nlay) :: g, h, xj, xk
     real(dp), dimension(nlay) :: alpha1, alpha2, sigma1, sigma2
-    real(dp), dimension(nlay) :: em1, obj, epp, obj2, epp2, em2, em3
+    real(dp), dimension(nlay) :: em1, obj, epp, em2, em3
 
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
 
@@ -229,7 +227,6 @@ contains
       if (abs(xk2(n)/xkk(2*n-1)) < 1e-30_dp) then
         xk2(n) = 0.0_dp
       end if
-      !print*, xk1(n), xk2(n)
     end do
 
     where (w0(:) <= 1e-4_dp)
@@ -241,7 +238,7 @@ contains
       alpha2(:)=twopi*B1(:)
       sigma1(:)=alpha1(:)
       sigma2(:)=alpha2(:)
-    elsewhere 
+    elsewhere
       g(:)=twopi*w0(:)*xk1(:)*(1.0_dp+hg(:)*alp(:))/(1.0_dp+alp(:))
       h(:)=twopi*w0(:)*xk2(:)*(1.0_dp-hg(:)*alp(:))/(1.0_dp+alp(:))
       xj(:)=twopi*w0(:)*xk1(:)*(1.0_dp-hg(:)*alp(:))/(1.0_dp+alp(:))
@@ -255,8 +252,6 @@ contains
     obj(:) = min(lam(:)*dtau(:),35.0_dp)
     epp(:) = exp(obj(:))
     em1(:) = 1.0_dp/epp(:)
-    obj2(:) = min(0.5_dp*lam(:)*dtau(:),35.0_dp)
-    epp2(:) = exp(obj2(:))
 
     ! Zero the total flux arrays
     flx_up(:) = 0.0_dp
@@ -274,7 +269,7 @@ contains
       do k = 1, nlay
         lw_down_g(k+1) = lw_down_g(k)*em2(k) + &
         & (xj(k)/(lam(k)*uarr(m)+1.0_dp))*(epp(k)-em2(k)) + &
-        & (xk(k)/(lam(k)*uarr(m)-1.0_dp))*(em2(k)-em(k))+sigma1(k)*(1.0_dp-em2(k)) + &
+        & (xk(k)/(lam(k)*uarr(m)-1.0_dp))*(em2(k)-em1(k))+sigma1(k)*(1.0_dp-em2(k)) + &
         & sigma2(k)*(uarr(m)*em2(k)+dtau(k)-uarr(m))
       end do
 
@@ -302,9 +297,8 @@ contains
     real(dp), dimension(l), intent(out) :: xk
 
     integer :: i
-    integer, parameter :: nmax = 301
     real(dp) :: x
-    real(dp), dimension(nmax) :: as, ds
+    real(dp), dimension(l) :: as, ds
 
     as(l) = af(l)/bf(l)
     ds(l) = df(l)/bf(l)

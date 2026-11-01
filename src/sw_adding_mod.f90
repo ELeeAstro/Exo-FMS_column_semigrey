@@ -19,7 +19,7 @@ module sw_adding_mod
 
 contains
 
-  subroutine sw_adding(nlay, nlev, tau_e, mu_z, Finc, ssa, gg, a_surf, sw_up, sw_down, sw_net, asr)
+  subroutine sw_adding(nlay, nlev, tau_e, mu_z, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)
     implicit none
 
     !! Input variables
@@ -27,7 +27,7 @@ contains
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
     real(dp), dimension(nlev) :: mu_z
-    real(dp) :: Finc, a_surf
+    real(dp) :: Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
@@ -35,7 +35,7 @@ contains
 
     !! Shortwave flux calculation
     if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
-      call sw_approx_adding(nlay, nlev, Finc, mu_z(:), tau_e(:), ssa(:), gg(:), a_surf, & 
+      call sw_approx_adding(nlay, nlev, Finc, mu_z(:), tau_e(:), ssa(:), gg(:), &
         & sw_down(:), sw_up(:))
     else
       sw_down(:) = 0.0_dp
@@ -51,11 +51,11 @@ contains
   end subroutine sw_adding
 
 
-  subroutine sw_approx_adding(nlay, nlev, F0_in, mu_in, tau_in, w_in, g_in, w_surf_in, flx_down, flx_up)
+  subroutine sw_approx_adding(nlay, nlev, F0_in, mu_in, tau_in, w_in, g_in, flx_down, flx_up)
     implicit none
 
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0_in, w_surf_in
+    real(dp), intent(in) :: F0_in
     real(dp), dimension(nlev), intent(in) :: tau_in, mu_in
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
 
@@ -63,20 +63,22 @@ contains
 
     integer :: k
     real(dp) :: lamtau, e_lamtau, arg, apg, amg
+    real(dp) :: tau_lo, N_lo, Tf_lo
     real(dp), dimension(nlev) ::  w, g, f
     real(dp), dimension(nlev) :: tau_e
     real(dp), dimension(nlay) :: tau
     real(dp), dimension(nlev) :: tau_s, w_s, g_s
     real(dp), dimension(nlev) :: lam, u, N, gam, alp
-    real(dp), dimension(nlev) :: R_b, T_b, R, T
+    real(dp), dimension(nlev) :: R_b, T_b, T
+    real(dp), dimension(nlev) :: R_lo, Rb_lo, Tb_lo
     real(dp), dimension(nlev) :: Tf
     real(dp), dimension(nlev) :: cum_trans
 
-    !! Design w and g to include surface property level
+    !! Add a black gas-giant lower-boundary entry.
     w(1:nlay) = w_in(:)
     g(1:nlay) = g_in(:)
 
-    w(nlev) = w_surf_in
+    w(nlev) = 0.0_dp
     g(nlev) = 0.0_dp
 
     ! If zero albedo across all atmospheric layers then return direct beam only
@@ -97,8 +99,7 @@ contains
         end do
       end if
 
-      flx_down(nlev) = flx_down(nlev) * (1.0_dp - w_surf_in) ! The surface flux for surface heating is the amount of flux absorbed by surface
-      flx_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
+      flx_up(:) = 0.0_dp
 
       return
 
@@ -115,7 +116,11 @@ contains
       tau_e(k+1) = tau_e(k) + tau_s(k)
     end do
 
-    !! Perform approximate adding method
+    !! Perform approximate adding method.
+    !! At every level we need the properties of BOTH slabs meeting there: the
+    !! slab above (optical depth tau_e(k), measured down from the top) and the
+    !! slab below (the remaining optical depth tau_e(nlev) - tau_e(k)). The two
+    !! are then combined with the adding formulae further down.
     do k = 1, nlev
 
       w_s(k) = w(k) * ((1.0_dp - f(k))/(1.0_dp - w(k)*f(k)))
@@ -125,6 +130,11 @@ contains
       alp(k) = 0.75_dp * w_s(k) * mu_in(k) * (1.0_dp + g_s(k)*(1.0_dp - w_s(k)))/(1.0_dp - lam(k)**2*mu_in(k)**2)
       u(k) = (3.0_dp/2.0_dp) * ((1.0_dp - w_s(k)*g_s(k))/lam(k))
 
+      apg = alp(k) + gam(k)
+      amg = alp(k) - gam(k)
+
+      !! Slab above level k - diffuse reflectance R_b, diffuse transmittance
+      !! T_b, direct transmittance Tf and total (direct + diffuse) transmittance T
       lamtau = min(lam(k)*tau_e(k),99.0_dp)
       e_lamtau = exp(-lamtau)
 
@@ -136,32 +146,44 @@ contains
       arg = min(tau_e(k)/mu_in(k),99.0_dp)
       Tf(k) = exp(-arg)
 
-      apg = alp(k) + gam(k)
-      amg = alp(k) - gam(k)
-
-      R(k) = amg*(T_b(k)*Tf(k) - 1.0_dp) + apg*R_b(k)
-
       T(k) = apg*T_b(k) + (amg*R_b(k) - (apg - 1.0_dp))*Tf(k)
 
-      R(k) = max(R(k), 0.0_dp)
+      !! Slab below level k - direct-beam reflectance R_lo and diffuse
+      !! reflectance Rb_lo. These are what the level sees looking downward,
+      !! so they must be built from the optical depth that remains below it.
+      tau_lo = tau_e(nlev) - tau_e(k)
+
+      lamtau = min(lam(k)*tau_lo,99.0_dp)
+      e_lamtau = exp(-lamtau)
+
+      N_lo = (u(k) + 1.0_dp)**2 * 1.0_dp/e_lamtau - (u(k) - 1.0_dp)**2  * e_lamtau
+
+      Rb_lo(k) = (u(k) + 1.0_dp)*(u(k) - 1.0_dp)*(1.0_dp/e_lamtau - e_lamtau)/N_lo
+      Tb_lo(k) = 4.0_dp * u(k)/N_lo
+
+      arg = min(tau_lo/mu_in(k),99.0_dp)
+      Tf_lo = exp(-arg)
+
+      R_lo(k) = amg*(Tb_lo(k)*Tf_lo - 1.0_dp) + apg*Rb_lo(k)
+
       T(k) = max(T(k), 0.0_dp)
       R_b(k) = max(R_b(k), 0.0_dp)
       T_b(k) = max(T_b(k), 0.0_dp)
+      R_lo(k) = max(R_lo(k), 0.0_dp)
+      Rb_lo(k) = max(Rb_lo(k), 0.0_dp)
 
     end do
 
-    !! Calculate downward flux
-    do k = 1, nlay
+    !! Add the slab above and the slab below at each level. At k = 1 the upper
+    !! slab is empty (Tf = T = 1, R_b = 0) so flx_up(1) reduces to R_lo(1), the
+    !! reflectance of the whole column - i.e. the planetary albedo. At k = nlev
+    !! the lower slab is empty (R_lo = Rb_lo = 0) so flx_up(nlev) = 0, the
+    !! gas-giant lower boundary condition.
+    do k = 1, nlev
       flx_down(k) = Tf(k) + ((T(k) - Tf(k)) +  &
-      & Tf(k)*R(k+1)*R_b(k))/(1.0_dp - R_b(k)*R_b(k+1))
+      & Tf(k)*R_lo(k)*R_b(k))/(1.0_dp - R_b(k)*Rb_lo(k))
+      flx_up(k) = (Tf(k)*R_lo(k) + (T(k) - Tf(k))*Rb_lo(k))/(1.0_dp - R_b(k)*Rb_lo(k))
     end do
-    flx_down(nlev) = Tf(nlev)
-
-    !! Calculate upward flux
-    do k = 1, nlay
-      flx_up(k) = (Tf(k)*R(k+1) + (T(k) - Tf(k))*R_b(k+1))/(1.0_dp - R_b(k)*R_b(k+1))
-    end do
-    flx_up(nlev) = flx_down(nlev) * w(nlev)
 
     !! Scale with the incident flux
     flx_down(:) = flx_down(:) * mu_in(nlev) * F0_in

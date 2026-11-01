@@ -14,7 +14,7 @@ module IC_mod
 contains
 
   subroutine IC_profile(iIC,corr,nlay,p0,pl,k_V,k_IR,Tint,mu,Tirr,grav,fl,Tl,prc, &
-    & Ts_init, Tstrat_init, kappa)
+    & Tdeep_init, Tstrat_init, kappa)
     implicit none
 
     !! Input flags
@@ -23,7 +23,7 @@ contains
 
     !! Input quantities
     integer, intent(in) :: nlay
-    real(dp), intent(in) :: p0, Tint, mu, Tirr, grav, fl, Ts_init, Tstrat_init, kappa
+    real(dp), intent(in) :: p0, Tint, mu, Tirr, grav, fl, Tdeep_init, Tstrat_init, kappa
     real(dp), dimension(nlay), intent(in) :: pl
     real(dp), dimension(nlay), intent(in) :: k_V, k_IR
 
@@ -51,7 +51,7 @@ contains
       ! for then dayside/nightside switch
       call Mayne_2014_IC(nlay,pl,Tl)
     case(6)
-      call dry_adiabat(nlay,p0,pl,Ts_init,Tstrat_init,kappa,Tl)
+      call dry_adiabat(nlay,p0,pl,Tdeep_init,Tstrat_init,kappa,Tl)
     case default
       print*, 'Invalid IC integer in IC_mod, stopping'
       stop
@@ -60,23 +60,23 @@ contains
 
     !! Perform adiabatic correction according to Parmentier et al. (2015)
     if (corr .eqv. .True.) then
-      call adiabat_correction(nlay,Tl,pl,prc)
+      call adiabat_correction(nlay,Tl,pl,p0,prc)
     else
       prc = p0
     end if
 
   end subroutine IC_profile
 
-  subroutine dry_adiabat(nlay,p0,pl,Ts,Tstrat,kappa,Tl)
+  subroutine dry_adiabat(nlay,p0,pl,Tdeep,Tstrat,kappa,Tl)
     implicit none
 
     integer, intent(in) :: nlay
-    real(dp), intent(in) :: p0, Ts, Tstrat, kappa
+    real(dp), intent(in) :: p0, Tdeep, Tstrat, kappa
     real(dp), dimension(nlay), intent(in) :: pl
 
     real(dp), dimension(nlay), intent(out) :: Tl
 
-    Tl(:) = Ts * (pl(:)/p0)**kappa
+    Tl(:) = Tdeep * (pl(:)/p0)**kappa
     Tl(:) = max(Tl(:), Tstrat)
 
   end subroutine dry_adiabat
@@ -264,12 +264,13 @@ contains
   end subroutine Parmentier_IC
 
   !! Subroutine that corrects for adiabatic region following Parmentier & Guillot (2015)
-  subroutine adiabat_correction(nlay,Tl,pl,prc)
+  subroutine adiabat_correction(nlay,Tl,pl,p0,prc)
     implicit none
 
     !! Input quantities
     integer, intent(in) :: nlay
     real(dp), dimension(nlay), intent(in) ::  pl
+    real(dp), intent(in) :: p0
 
     !! Output quantities
     real(dp), dimension(nlay), intent(inout) :: Tl
@@ -278,6 +279,7 @@ contains
     !! Work variables
     integer :: k, iRC, iRC1
     real(dp), dimension(nlay) :: gradrad, gradad
+    logical :: found_rcb
 
     do k = 1, nlay-1
       gradrad(k) = log(Tl(k)/Tl(k+1))/log(pl(k)/pl(k+1))
@@ -287,8 +289,11 @@ contains
     gradrad(nlay) = 0.0_dp
     gradad(nlay) = 0.0_dp
 
-    iRC = nlay-1
-    iRC1 = nlay-1
+    !! nlay is the sentinel for no bottom-connected RCB in the model domain.
+    iRC = nlay
+    iRC1 = nlay
+    prc = p0
+    found_rcb = .False.
 
     do k = nlay-1, 1, -1
       if (IRC1 <= k+1) then
@@ -298,11 +303,12 @@ contains
         if (gradrad(k) > 0.98_dp*gradad(k)) then
          iRC = k
          prc = pl(iRC)
+         found_rcb = .True.
         endif
       end if
     end do
 
-    if (iRC < nlay) then
+    if (found_rcb) then
       do k = iRC, nlay-1
         gradad(k) = 0.32_dp - 0.10_dp*Tl(k)/3000.0_dp
         if (gradad(k) < 0.0_dp) then

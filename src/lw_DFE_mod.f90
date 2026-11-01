@@ -1,6 +1,7 @@
 !!!
 ! Elspeth KH Lee - July 2024 : Initial version
-! lw: 
+! lw: Absorption-only discontinuous finite-element method.
+!     Scattering is not represented by this solver.
 !!!
 
 module lw_DFE_mod
@@ -15,6 +16,7 @@ module lw_DFE_mod
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
   real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
+  real(dp), parameter :: dtau_floor = 1.0e-12_dp
 
   !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
   !! here you can comment in/out groups of mu values for testing
@@ -46,7 +48,7 @@ module lw_DFE_mod
 contains
 
 
-  subroutine lw_DFE(nlay, nlev, Tl, pl, pe, tau_e, ssa, gg, Tint, lw_up, lw_down, lw_net, olr)
+  subroutine lw_DFE(nlay, nlev, Tl, pl, pe, tau_e, Tint, lw_up, lw_down, lw_net, olr)
     implicit none
 
     !! Input variables
@@ -54,7 +56,6 @@ contains
     real(dp), dimension(nlay), intent(in) :: Tl, pl
     real(dp), dimension(nlev), intent(in) :: pe
     real(dp), dimension(nlev), intent(in) :: tau_e
-    real(dp), dimension(nlay), intent(in) :: ssa, gg
     real(dp), intent(in) :: Tint
 
     !! Output variables
@@ -62,24 +63,25 @@ contains
     real(dp), intent(out) :: olr
 
     !! Work variables
-    integer :: k
     real(dp), dimension(nlev) :: Te
     real(dp), dimension(nlev) :: be
     real(dp) :: be_int
 
-    !! Use WENO4 method to (smoothly) interpolate layers to levels
-    Te(:) = interpolate_weno4(pe, pl, Tl, .False.)
+    !! Use WENO4 method to (smoothly) interpolate layers to levels, in ln p
+    Te(:) = interpolate_weno4(log(pe), log(pl), Tl, .False.)
 
-    !! Edges are linearly interpolated to avoid overshoot
-    Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
-    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
+    !! Edges are linearly extrapolated in log(p)-log(T) space.
+    Te(1) = 10.0_dp**(log10(Te(2)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * &
+      & log10(Tl(1)/Te(2)))
+    Te(nlev) = 10.0_dp**(log10(Te(nlay)) + (log10(pe(nlev)/pe(nlay))/ &
+      & log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Find integrated planck function for each level
     be(:) = (sb * Te(:)**4)/pi
     be_int = (sb * Tint**4)/pi
 
     !! Longwave flux calculation
-    call lw_discontinuous_finite_element(nlay, nlev, be(:), be_int, tau_e(:), ssa(:), gg(:), &
+    call lw_discontinuous_finite_element(nlay, nlev, be(:), be_int, tau_e(:), &
       & lw_up(:), lw_down(:))
 
     !! Net lw fluxes at each level
@@ -96,26 +98,29 @@ contains
 
   end subroutine lw_DFE
 
-  subroutine lw_discontinuous_finite_element(nlay, nlev, be, be_int, tau_in, w_in, g_in, flx_up, flx_down)
+  subroutine lw_discontinuous_finite_element(nlay, nlev, be, be_int, tau_in, flx_up, flx_down)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: be, tau_in
     real(dp), intent(in) :: be_int
-    real(dp), dimension(nlay), intent(in) :: w_in, g_in
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: flx_up, flx_down
 
     !! Work variables and arrays
     integer :: k, m
+    real(dp) :: denominator
     real(dp), dimension(nlay) :: dtau
     real(dp), dimension(nlay) :: del, a, b
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g, Ip, Im
 
     !! Calculate dtau in each layer
     dtau(:) = tau_in(2:) - tau_in(1:nlay)
+    where (dtau(:) >= 0.0_dp .and. dtau(:) < dtau_floor)
+      dtau(:) = dtau_floor
+    end where
 
     ! Zero the total flux arrays
     flx_up(:) = 0.0_dp
@@ -140,12 +145,18 @@ contains
 
       lw_down_g(1) = Im(1)
       do k = 2, nlay
-        lw_down_g(k) = (Im(k)*del(k) + Ip(k)*del(k-1))/(del(k) + del(k-1))
+        denominator = del(k) + del(k-1)
+        if (abs(denominator) > tiny(denominator)) then
+          lw_down_g(k) = (Im(k)*del(k) + Ip(k)*del(k-1))/denominator
+        else
+          lw_down_g(k) = Im(k)
+        end if
       end do
       lw_down_g(nlev) = Im(nlev)
 
-      !! Perform the Ip and Im calculation for the upward stream
-      Im(nlev) = be(nlev) + uarr(m)*(be(nlev) - be(nlev-1))/del(nlay)! Internal radiation
+      !! Perform the Ip and Im calculation for the upward stream.
+      !! Gas-giant lower boundary: the net upward intensity is B(Tint).
+      Im(nlev) = lw_down_g(nlev) + be_int
       do k = nlev, 2, -1
         Im(k-1) = (2.0_dp * Im(k) + del(k-1)*be(k) + b(k-1)*be(k-1))/a(k-1)
         Ip(k) = (2.0_dp*(del(k-1) + 1.0_dp)*Im(k) + b(k-1)*be(k) - del(k-1)*be(k-1))/a(k-1)
@@ -154,7 +165,12 @@ contains
 
       lw_up_g(1) = Im(1)
       do k = 2, nlay
-        lw_up_g(k) = (Im(k)*del(k) + Ip(k)*del(k-1))/(del(k) + del(k-1))
+        denominator = del(k) + del(k-1)
+        if (abs(denominator) > tiny(denominator)) then
+          lw_up_g(k) = (Im(k)*del(k) + Ip(k)*del(k-1))/denominator
+        else
+          lw_up_g(k) = Im(k)
+        end if
       end do
       lw_up_g(nlev) = Im(nlev)
       

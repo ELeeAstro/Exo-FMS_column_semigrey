@@ -26,7 +26,7 @@ module sw_SDA_mod
 
 contains
 
-  subroutine sw_SDA(nlay, nlev, tau_e, mu_z, Finc, ssa, gg, a_surf, sw_up, sw_down, sw_net, asr)
+  subroutine sw_SDA(nlay, nlev, tau_e, mu_z, Finc, ssa, gg, sw_up, sw_down, sw_net, asr)
     implicit none
 
     !! Input variables
@@ -34,7 +34,7 @@ contains
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
     real(dp), dimension(nlev) :: mu_z
-    real(dp) :: Finc, a_surf
+    real(dp) :: Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
@@ -43,7 +43,7 @@ contains
     !! Shortwave flux calculation
     if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
 
-      call sw_fs_SDA(nlay, nlev, Finc, mu_z(:), tau_e(:), ssa(:), gg(:), a_surf, sw_down(:), sw_up(:))
+      call sw_fs_SDA(nlay, nlev, Finc, mu_z(:), tau_e(:), ssa(:), gg(:), sw_down(:), sw_up(:))
 
     else
       sw_down(:) = 0.0_dp
@@ -58,12 +58,12 @@ contains
 
   end subroutine sw_SDA
 
-  subroutine sw_fs_SDA(nlay, nlev, F0_in, mu_in, tau_in, w_in, g_in, w_surf_in, flx_down, flx_up)
+  subroutine sw_fs_SDA(nlay, nlev, F0_in, mu_in, tau_in, w_in, g_in, flx_down, flx_up)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0_in, w_surf_in
+    real(dp), intent(in) :: F0_in
     real(dp), dimension(nlev), intent(in) :: tau_in, mu_in
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
 
@@ -128,8 +128,7 @@ contains
         end do
       end if
 
-      flx_down(nlev) = flx_down(nlev) * (1.0_dp - w_surf_in) ! The surface flux for surface heating is the amount of flux absorbed by surface
-      flx_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
+      flx_up(:) = 0.0_dp
 
       return
 
@@ -349,9 +348,8 @@ contains
     Rst1k(1,:,:) = 0.0_dp
 
     ! Lower
-    RkN(nlev,1) = w_surf_in ; RkN(nlev,2) = -w_surf_in/4.0_dp 
-    RbkN(nlev,1,1) = w_surf_in ; RbkN(nlev,1,2) = 0.0_dp
-    RbkN(nlev,2,1) = -w_surf_in/4.0_dp ; RbkN(nlev,2,2) = 0.0_dp
+    RkN(nlev,:) = 0.0_dp
+    RbkN(nlev,:,:) = 0.0_dp
 
     !! Direct beam transmission to level
     T(:) = exp(-tau(:)/mu_in(k))

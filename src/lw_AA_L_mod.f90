@@ -1,13 +1,14 @@
 !!!
 ! Elspeth KH Lee - Aug 2023 : Initial version
-! lw: (Extended) Absorption Approximation following Li (2002) (alpha-nEAA) - This is the linear in tau method
+! lw: Extended Absorption Approximation (EAA) following Li (2002) - This is the linear in tau method
 !     Pros: Very fast method with LW scattering approximation, no matrix inversions
 !     Cons: Not technically multiple scattering (can be quite innacurate at even moderate albedo)
+!
 !!!
 
 module lw_AA_L_mod
   use, intrinsic :: iso_fortran_env
-  use WENO4_mod, only : interpolate_weno4  
+  use WENO4_mod, only : interpolate_weno4
   implicit none
 
   !! Precision variables
@@ -15,13 +16,12 @@ module lw_AA_L_mod
 
   !! Required constants
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
-  real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
   !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
   !! here you can comment in/out groups of mu values for testing
   !! make sure to make clean and recompile if you change these.
-  
+
   !! Optimised quadrature for 1 node - 2 stream (Hogan 2024)
   ! integer, parameter :: nmu = 1
   ! real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
@@ -68,20 +68,21 @@ contains
     real(dp), dimension(nlev) :: be
     real(dp) :: be_int
 
-    !! Use WENO4 method to (smoothly) interpolate layers to levels
-    Te(:) = interpolate_weno4(pe, pl, Tl, .False.)
+    !! Use WENO4 method to (smoothly) interpolate layers to levels, in ln p
+    Te(:) = interpolate_weno4(log(pe), log(pl), Tl, .False.)
 
-    !! Edges are linearly interpolated to avoid overshoot
-    Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
-    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
+    !! Edges: log-linear extrapolation (log T against log p) through the neighbouring level
+    !! and the edge layer, to avoid overshoot
+    Te(1) = 10.0_dp**(log10(Te(2)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
+    Te(nlev) = 10.0_dp**(log10(Te(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Find integrated planck function for each level
     be(:) = (sb * Te(:)**4)/pi
-    be_int = (sb * Tint**4)/pi
+    be_int = (sb * Tint**4)/pi      ! internal flux added to the reflected downward intensity
 
-    !! Longwave flux calculation
-    call lw_AA_linear(nlay, nlev, be(:), be_int, tau_e(:), ssa(:), gg(:), &
-      & lw_up(:), lw_down(:))
+    !! Longwave flux calculation (gas giant: internal-flux lower boundary, surf = .false.)
+    call lw_AA_linear(nlay, nlev, be(:), be_int, .false., tau_e(:), ssa(:), gg(:), &
+      & nmu, uarr, w, lw_up(:), lw_down(:))
 
     !! Net lw fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -91,54 +92,33 @@ contains
 
   end subroutine lw_AA_L
 
-  subroutine lw_AA_linear(nlay, nlev, be, be_int, tau_in, w_in, g_in, flx_up, flx_down)
+  subroutine lw_AA_linear(nlay, nlev, be, be_int, surf, tau_in, w_in, g_in, nm, mu_q, w_q, &
+    & flx_up, flx_down)
     implicit none
 
     !! Input variables
-    integer, intent(in) :: nlay, nlev
+    integer, intent(in) :: nlay, nlev, nm
     real(dp), dimension(nlev), intent(in) :: be, tau_in
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
     real(dp), intent(in) :: be_int
+    logical, intent(in) :: surf                     
+    real(dp), dimension(nm), intent(in) :: mu_q, w_q 
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: flx_up, flx_down
 
     !! Work variables
     integer :: k, m
-    real(dp), dimension(nlay) :: dtau, w0, hg, eps, dtau_a
-    real(dp), dimension(nlay) :: al, T
+    real(dp), dimension(nlay) :: dtau, eps, dtau_a
+    real(dp), dimension(nlay) :: del, T, e0i, psi_u, psi_0
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
-    real(dp), dimension(nlay) :: fc, sigma_sq, pmom2, c
-    integer, parameter :: nstr = nmu*2
+    real(dp), parameter :: small_tau = 1.0e-3_dp
 
     dtau(:) = tau_in(2:nlev) - tau_in(1:nlay)
 
-    !! Delta-M+ scaling (Following DISORT: Lin et al. 2018)
-    !! Assume HG phase function for scaling
-    
-    where (g_in(:) >= 1e-6_dp)
-      fc(:) = g_in(:)**(nstr)
-      pmom2(:) = g_in(:)**(nstr+1)
-      sigma_sq(:) = real((nstr+1)**2 - nstr**2,dp) / &
-      & ( log(fc(:)**2/pmom2(:)**2) )
-      c(:) = exp(real(nstr**2,dp)/(2.0_dp*sigma_sq(:)))
-      fc(:) = c(:)*fc(:)
-
-      w0(:) = w_in(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*w_in(:)))
-      dtau(:) = (1.0_dp - w_in(:)*fc(:))*dtau(:)
-
-    elsewhere
-      w0(:) = w_in(:)
-    end where
-
-    hg(:) = g_in(:)
-
-    !! Linear B with tau function
-    al(:) = (be(2:nlev) - be(1:nlay))
-
-    !! modified co-albedo epsilon
-    eps(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
-    !eps(:) = (1.0_dp - w0(:))
+    !! EAA modified co-albedo.  No delta scaling is needed because this
+    !! transport combination is invariant under a consistent delta transform.
+    eps(:) = sqrt((1.0_dp - w_in(:))*(1.0_dp - g_in(:)*w_in(:)))
 
     !! Absorption/modified optical depth for transmission function
     dtau_a(:) = eps(:)*dtau(:)
@@ -148,41 +128,44 @@ contains
     flx_down(:) = 0.0_dp
 
     !! Start loops to integrate in mu space
-    do m = 1, nmu
+    do m = 1, nm
 
-      !! Transmission function
-      T(:) = exp(-dtau_a(:)/uarr(m))
+      !! Use their Taylor expansions at small slant absorption optical thickness.
+      del(:) = dtau_a(:)/mu_q(m)
+      where (del(:) < small_tau)
+        psi_0(:) = del(:)*(0.5_dp + del(:)*(-1.0_dp/6.0_dp + del(:)/24.0_dp))
+        psi_u(:) = del(:)*(0.5_dp + del(:)*(-1.0_dp/3.0_dp + del(:)/8.0_dp))
+        T(:) = 1.0_dp - psi_u(:) - psi_0(:)
+      elsewhere
+        T(:) = exp(-del(:))
+        e0i(:) = 1.0_dp - T(:)
+        psi_0(:) = (del(:) - e0i(:))/del(:)
+        psi_u(:) = e0i(:) - psi_0(:)
+      end where
 
-      !! Begin two-stream loops
+      !! Begin angular sweeps
       !! Perform downward loop first
-      ! Top boundary condition - intensity downward from top boundary (tautop, assumed isothermal)
+      ! Top boundary condition - no downward intensity at the top
       lw_down_g(1) = 0.0_dp
       do k = 1, nlay
-        if (dtau_a(k) > 1e-4_dp) then
-          !! Do linear in tau
-          lw_down_g(k+1) = lw_down_g(k)*T(k) +  be(k+1) - al(k)*(uarr(m)/dtau_a(k)) & 
-            & - (be(k) - al(k)*(uarr(m)/dtau_a(k)))*T(k) ! TS intensity
-        else
-          !! Do isothermal approximation
-          lw_down_g(k+1) = lw_down_g(k)*T(k) + 0.5_dp*(be(k) + be(k+1))*(1.0_dp - T(k))
-        end if
+        lw_down_g(k+1) = lw_down_g(k)*T(k) + psi_u(k)*be(k) + psi_0(k)*be(k+1)
       end do
 
       !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_up - F_down
-      lw_up_g(nlev) = lw_down_g(nlev) + be_int
+      ! Lower boundary condition - internal heat definition Fint = F_up - F_down,
+      ! or a black-body surface (surf)
+      if (surf) then
+        lw_up_g(nlev) = be_int
+      else
+        lw_up_g(nlev) = lw_down_g(nlev) + be_int
+      end if
       do k = nlay, 1, -1
-        if (dtau_a(k)  > 1e-4_dp) then
-          lw_up_g(k) = lw_up_g(k+1)*T(k) +  be(k) + al(k)*(uarr(m)/dtau_a(k)) & 
-            & - (be(k+1) + al(k)*(uarr(m)/dtau_a(k)))*T(k)! TS intensity
-        else
-          lw_up_g(k) = lw_up_g(k+1)*T(k) + 0.5_dp*(be(k) + be(k+1))*(1.0_dp - T(k))
-        end if
+        lw_up_g(k) = lw_up_g(k+1)*T(k) + psi_0(k)*be(k) + psi_u(k)*be(k+1)
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
-      flx_down(:) = flx_down(:) + lw_down_g(:) *  w(m)
-      flx_up(:) = flx_up(:) + lw_up_g(:) *  w(m)
+      flx_down(:) = flx_down(:) + lw_down_g(:) *  w_q(m)
+      flx_up(:) = flx_up(:) + lw_up_g(:) *  w_q(m)
 
     end do
 

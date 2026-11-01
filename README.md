@@ -6,6 +6,7 @@ Major Update History
  - Jun 2022 - Improvements + Bezier short char.
  - Aug 2023 - Added AA and VIM methods, cleanup - add 4SDA method to AA_E, AA_L and VIM
  - Jul 2024 - More methods + updates to methods, split sw and lw method
+ - Nov 2026 - Major update: adding-doubling (AD), Riccati short characteristics with scattering, SH2/SH4 and VIM_L longwave methods, n-stream DISORT benchmarks, Exo-FMS_2 Toon, AA and convection schemes, gas giant lower boundary everywhere
 
 Elspeth K.H. Lee - Dec 2021
 
@@ -22,39 +23,60 @@ Lee et al. (2021)
 The advantage of semi-grey scheme is that they are fast and produce relatively realistic T-p profiles if parameters are chosen carefully.
 Larger deviations to real gas typically occur at low pressure, where the cooling efficiencies are generally too low in the semi-grey framework, leading to highly isothermal upper atmospheres.
 
+This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques as they would perform inside a GCM setting.
+This is also useful to see differences in each method and their various approximations.
+
 To compile enter 'make' in the src directory. To remove compiled code enter 'make clean'. \
 Some compiler options for gfortran, nvfortran and intel are provided in the makefile. \
-You will need to link a lapack installation, if this is not possible then don't compile the SH2 and SH4 methods and comment out their code in FMS_RC.f90
+No external libraries are needed, the DISORT toolchain (including its own LAPACK routines) is included in src.
+
+# Personal recommendations
+
+For the longwave: \
+'lw_sc_scat_ric' - the best balance between speed and accuracy. Close to the n-stream DISORT benchmark for most scattering properties, at around twice the cost of Toon89. \
+'lw_Toon' - fast but accurate. A good choice for GCMs when the longwave scattering is not too strong. \
+'lw_AD' - for accuracy, but slower. Accurate for any single scattering albedo and asymmetry factor, including very strongly scattering atmospheres, but much slower than the two-stream methods. \
+'lw_AA_L' - for pure speed. Very fast and very good for absorption, but becomes inaccurate as the scattering increases.
+
+For the shortwave we recommend the adding method for scattering problems, and the direct beam method if there is no shortwave scattering.
+The SDA method currently returns negative upward fluxes and should not be used.
+
+# Methods
 
 For the shortwave method we have:
 1. Direct beam only method
 2. Adding method
 3. Spherical harmonic adding method (SDA)
 4. Toon89 multiple scattering method
-5. Spherical harmonic two-stream multiple scattering method (SH2)
-6. Spherical harmonic four-stream multiple scattering method (SH4)
-7. Two-stream DISORT version
+5. Two-stream DISORT version
+6. n-stream DISORT version (benchmark)
 
-Adding-Doubling (AD), SH2, SH4, Feautrier, DFE and disort are in development
+SH2 and SH4 shortwave are in development and their namelist options are disabled. Adding-Doubling (AD) and Feautrier shortwave are in development.
 
 For the longwave method we have:
 1. Absorption approximation with exponential in tau function (AA_E)
 2. Absorption approximation with linear in tau function (AA_L)
-3. Short characteristics (sc) with linear interpolants 
-4. Toon89 multiple scattering method
-5. Variational iteration method (VIM)
-6. Two-stream DISORT version
+3. Short characteristics (sc) with linear interpolants
+4. Short characteristics 8-stream discrete ordinates with anisotropic multiple scattering, solved by Riccati invariant imbedding (sc_scat_ric)
+5. Toon89 multiple scattering method
+6. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO
+7. Variational iteration method (VIM), exponential and linear in tau (VIM_E and VIM_L)
+8. Adding-doubling (AD) 8-stream multiple scattering, converted from AddingDoublingRT
+9. Two-stream DISORT version
+10. n-stream DISORT version (benchmark)
+11. Absorption-only discontinuous finite-element method (DFE)
 
-Adding-Doubling (AD), SH2, SH4, Feautrier, DFE, sc_para and disort are in development
+The direct and iterative short characteristics scattering solvers and the Feautrier method are in development and are disabled. DFE is experimental and does not include scattering.
 
 You can also see the header comments in the source code for some additional information.
 
-This emulates a single column inside the Exo-FMS GCM and is useful for testing and developing new techniques
-as they would perform inside a GCM setting. This is also useful to see differences in each method and their various approximations.
+For the longwave radiation, we use the weighted essentially non oscillatory order 4 interpolation method (WENO4) from Janett et al. (2019) to interpolate the temperature from the layers to the levels (typically this is required in GCMs).
+The interpolation is done in log pressure, which gives a very smooth interpolation and strong gradients in temperature are accurately interpolated through. The end points are linearly extrapolated in log(p)-log(T) space to avoid numerical issues and overshoot.
 
-For the longwave radiation, we use the weighted essentially non oscillatory order 4 interpolation method (WENO4) from Janett et al. (2019). This allows for highly smooth interpolation of the temperature from the layers to the levels (typically this is required in GCMs) and strong gradients in temperature are accurately interpolated through. Linear extrapolation is used for the end points to avoid numerical issues and overshoot.
+The model uses a gas giant lower boundary. Shortwave radiation is not reflected at the bottom of the column, and in the longwave the internal temperature sets the net flux at the lower boundary, F_up - F_down = sigma*Tint^4. There is no solid surface.
 
-We also include dry convective adjustment schemes, currently 'Ray_adj', based on Raymond Pierrehumbert's python code and mixing length theory (MLT).
+We also include the dry convection schemes from Exo-FMS_2: the Manabe et al. (1965) adjustment, Raymond Pierrehumbert's adjustment and mixing length theory (MLT).
+These act on the column after the radiative heating of the timestep, so the column is convectively stable at the end of each step.
 
 Results can be plotted using the plot_TP.py and plot_flux.py python codes in the main directory.
 
@@ -67,34 +89,41 @@ In the hybrid_sigma directory you can use gen_hybrid_sigma_grid.py to generate a
 In the file 'FMS_RC.nml' you can select different options that control the simulation, below are the brief descriptions and options for the parameters.
 
 sw_scheme: \
-'sw_direct' - direct beam only \ 
+'sw_direct' - direct beam only \
 'sw_adding' - adding method \
-'sw_SDA' - SDA method \
-'sw_Toon' - Toon89 method \
-'sw_SH2' - SH2 method (experimental) \
-'sw_SH4' - SH4 method (experimental) \ 
+'sw_SDA' - SDA method (currently broken) \
+'sw_Toon' - Toon89 method (Exo-FMS_2 version) \
 'sw_disort_ts' - two stream disort method \
+'sw_disort' - n-stream disort method (benchmark, slow)
 
 lw_scheme: \
 'lw_AA_E' - AA_E method \
 'lw_AA_L' - AA_L method \
-'lw_sc_linear' - sc linear method \
-'lw_VIM' - VIM method \
-'lw_Toon' - Toon89 method \ 
-'lw_disort_ts' - two steam disort method \
+'lw_sc_linear' - sc linear method (same result as AA_L, written as short characteristics) \
+'lw_sc_scat_ric' - sc 8-stream scattering method, Riccati solution \
+'lw_Toon' - Toon89 method (Exo-FMS_2 version) \
+'lw_SH2' - two-stream spherical harmonic method (PICASO) \
+'lw_SH4' - four-stream spherical harmonic method (PICASO) \
+'lw_VIM_E' - VIM method, exponential in tau \
+'lw_VIM_L' - VIM method, linear in tau \
+'lw_AD' - adding-doubling method \
+'lw_disort_ts' - two stream disort method \
+'lw_disort' - n-stream disort method (benchmark, slow) \
+'lw_DFE' - absorption only DFE method (requires lw_ac = 0)
 
 opac_scheme: \
-'Constant' - constant k_V and k_IR values \
+'constant' - constant k_V and k_IR values \
 'Heng' - Heng et al. method with fl parameter \
 'TK19' - Tan & Komacek (2019) pressure dependent k_V and k_IR UHJ scheme \
 'Freedman' - Uses the Rosseland mean fitting function from Freedman et al. (2014) \
 'Valencia' - Uses the Rosseland mean fitting function from Valencia et al. (2013)
 
 adj_scheme: \
-'Ray_dry' - Ray Pierrehumbert's dry convective adjustment scheme \
-'MLT' - Mixing length theory
+'Manabe' - Manabe et al. (1965) dry convective adjustment (recommended) \
+'Pierrehumbert' - Ray Pierrehumbert's dry convective adjustment ('Ray_dry' also works) \
+'MLT' - Mixing length theory, also gives Kzz
 
---- The option 'None' for each of these scheme will turn it off (e.g. To run without conv adjustment set adj_scheme = 'None') ---
+--- The option 'none' for each of these scheme will turn it off (e.g. To run without conv adjustment set adj_scheme = 'none') ---
 
 nlay, a_sh , b_sh - the number of layers, and filenames that contain the a and b constants for the hybrid sigma grid
 
@@ -125,34 +154,32 @@ lw_gc - longwave asymmetry factor (constant at all layers)
 
 zcorr - include zenith angle correction (.True.) \
 zcorr_meth - zenith angle correction method (1,2)  \
-radius - radius of the planet at surface (m)
+radius - planetary radius at the model's lower boundary (m)
 
-iIC - Initial condition selection integer (3 = Guillot (2010) profile using k_V and k_IR, 6 = adiabatic from Ts_init to Tstrat_init) \
+iIC - Initial condition selection integer (3 = Guillot (2010) profile using k_V and k_IR, 6 = adiabatic from Tdeep_init to Tstrat_init) \
 corr - Flag to perform the adiabatic gradient correction in the initial conditions
 
-surf - solid surface is present (.True.) \
-Ts_init - initial temperature of surface \
-Tstrat_init - initial temperature of stratosphere \
-cp_surf - surface areal heat capacity \
-sw_a_surf - shortwave surface albedo \
-lw_a_surf - longwave surface albedo
+Tdeep_init - initial deep atmosphere temperature for the adiabatic initial condition \
+Tstrat_init - initial temperature of stratosphere
 
-# Plotting results
+# n-stream DISORT benchmark
 
-A python plotting routines, 'plot_TP.py'and 'plot_flux.py' are provided to plot the results of the simulation.
+sw_disort and lw_disort use the full DISORT 4.0.99 solver and are meant as accuracy benchmarks rather than for use in a GCM, they are a lot slower than the other methods.
+The number of streams is set by the nstr parameter at the top of sw_disort_mod.f90 and lw_disort_mod.f90 (default 32), you will need to clean and recompile if you change this.
+
+DISORT assumes a surface, which a gas giant does not have. Rather than changing DISORT, the internal flux lower boundary is found from two DISORT calls with different bottom temperatures.
+Since the fluxes are linear in the bottom emission, the right combination of the two gives exactly F_up - F_down = sigma*Tint^4 at the bottom.
+
+The DISORT toolchain is compiled in double precision (see the makefile), as single precision is not accurate enough for the small internal flux compared to the large fluxes deep in a gas giant atmosphere.
 
 # Gaussian Ordinance values
 
-In methods that use Gaussian quadrature to perform the mu integration in intensity (to calculate the flux), various values and weights can be changed for testing at the top of the two-stream modules.
+In methods that use Gaussian quadrature to perform the mu integration in intensity (to calculate the flux), various values and weights can be changed for testing at the top of the modules.
+Most longwave methods use the 4 node Gauss-Jacobi quadrature from Hogan (2024).
+The schemes where the quadrature points are also the scattering streams (sc_scat_ric, AD) use Gauss-Legendre points.
 You will need to clean and recompile the code if these are changed. Beware, some codes use the classical Gauss-Legendre method (flux = 2pi * intensity), while others include the weighting in the intensity (flux = pi * intensity).
-
-# Personal recommendations
-
-For shortwave scattering problems we recommend the adding method as included, or if more accuracy is needed the SDA or Toon89 methods.
-For longwave scattering problems we recommend the linear absorption approximation method or if more accuracy is required the VIM or Toon89 methods.
 
 # Future developments
 
-Ability to include solid surface temperatures and temperature evolution, this involves some extra switches and boundary conditions. \
 Additional opacity schemes from the literature can be added. \
 Window fractions and functions.

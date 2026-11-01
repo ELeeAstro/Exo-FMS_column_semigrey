@@ -4,10 +4,10 @@
 &FMS_RC_nml
 
 sw_scheme = 'sw_direct'
-lw_scheme = 'lw_VIM'
+lw_scheme = 'lw_AA_L'
 
 opac_scheme = 'constant'
-adj_scheme = 'Ray_dry'
+adj_scheme = 'Manabe'
 
 nlay = 54
 a_sh = 'hybrid_sigma/Hybrid_sigma_grid_a_54.txt'
@@ -45,11 +45,7 @@ radius = 7.1492e7
 iIC = 3
 corr = .False.
 
-surf = .False.
-Ts_init = 288.0
+Tdeep_init = 288.0
 Tstrat_init = 50.0
-cp_surf = 1e7
-sw_a_surf = 0.0
-lw_a_surf = 0.0
 
 /

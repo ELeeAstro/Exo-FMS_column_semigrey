@@ -18,14 +18,14 @@ module sw_direct_mod
 
 contains
 
-  subroutine sw_direct(nlev, tau_e, mu_z, Finc, a_surf, sw_up, sw_down, sw_net, asr)
+  subroutine sw_direct(nlev, tau_e, mu_z, Finc, sw_up, sw_down, sw_net, asr)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlev
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlev) :: mu_z
-    real(dp) :: Finc, a_surf
+    real(dp) :: Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
@@ -33,7 +33,7 @@ contains
 
     !! Shortwave flux calculation
     if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
-      call sw_direct_beam(nlev, Finc, mu_z(:), tau_e(:), a_surf, sw_down(:), sw_up(:))
+      call sw_direct_beam(nlev, Finc, mu_z(:), tau_e(:), sw_down(:), sw_up(:))
     else
       sw_down(:) = 0.0_dp
       sw_up(:) = 0.0_dp
@@ -47,11 +47,11 @@ contains
 
   end subroutine sw_direct
 
-  subroutine sw_direct_beam(nlev, F0_in, mu_in, tau_in, w_surf_in, flx_down, flx_up)
+  subroutine sw_direct_beam(nlev, F0_in, mu_in, tau_in, flx_down, flx_up)
     implicit none
 
     integer, intent(in) :: nlev
-    real(dp), intent(in) :: F0_in, w_surf_in
+    real(dp), intent(in) :: F0_in
     real(dp), dimension(nlev), intent(in) :: tau_in, mu_in
 
     real(dp), dimension(nlev), intent(out) :: flx_down, flx_up
@@ -76,8 +76,9 @@ contains
       end do
     end if
 
-    flx_down(nlev) = flx_down(nlev) * (1.0_dp - w_surf_in) ! The surface flux for surface heating is the amount of flux absorbed by surface
-    flx_up(:) = 0.0_dp ! We assume no upward flux here even if surface albedo
+    ! Gas-giant lower boundary: shortwave radiation may leave the modeled
+    ! column downward, but none is reflected upward.
+    flx_up(:) = 0.0_dp
 
 
   end subroutine sw_direct_beam

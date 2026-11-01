@@ -50,12 +50,14 @@ contains
     logical :: planck
 
 
-    !! Use WENO4 method to (smoothly) interpolate layers to levels
-    Te(:) = interpolate_weno4(pe, pl, Tl, .False.)
+    !! Use WENO4 method to (smoothly) interpolate layers to levels, in ln p
+    Te(:) = interpolate_weno4(log(pe), log(pl), Tl, .False.)
 
-    !! Edges are linearly interpolated to avoid overshoot
-    Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
-    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
+    !! Edges are linearly extrapolated in log(p)-log(T) space.
+    Te(1) = 10.0_dp**(log10(Te(2)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * &
+      & log10(Tl(1)/Te(2)))
+    Te(nlev) = 10.0_dp**(log10(Te(nlay)) + (log10(pe(nlev)/pe(nlay))/ &
+      & log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     Te_0(:) = 0.0_dp
     Te_0(0:nlay) = Te(1:nlev)
@@ -82,7 +84,9 @@ contains
       dtauc(i) = (tau_e(i+1) - tau_e(i))
     end do
 
-    call call_twostr(nlay,Te_0,ggg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
+    ! A unit-reflecting mathematical lower boundary plus the emitted Tint
+    ! term imposes F_up - F_down = sigma*Tint**4.
+    call call_twostr(nlay,1.0_dp,Te_0,ggg,ssalb,dtauc,nlev,utau,planck,wvnmlo,wvnmhi,Tint,fbeam,umu0, &
       & lw_net_d(:),lw_up_d(:),lw_down_d(:))
 
     lw_net(:) = lw_net_d(1:nlev)

@@ -30,3 +30,20 @@
 *.exe
 *.out
 *.app
+
+# Claude Code local settings
+.claude/
+
+# Build output and Python cache
+FMS_RC_sg
+__pycache__/
+
+# lw_sc_scat schemes - not yet ready for release
+src/lw_sc_scat_*.f90
+!src/lw_sc_scat_ric.f90
+
+# lw_Feautrier - in development
+src/lw_Feautrier_mod.f90
+
+# Local benchmark runs and results
+benchmarks/

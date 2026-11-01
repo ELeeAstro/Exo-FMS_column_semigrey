@@ -2,16 +2,18 @@
 ! Elspeth KH Lee - May 2021 : Initial version
 !                - Oct 2021 : adding method & Bezier interpolation
 !                - Aug 2023 : Change quadrature following Li (2000)
-!                - Jun 2024 : Change quadrature following Hogan (2004)
-! lw: Two-stream method following the short characteristics method (e.g. Helios-r2: Kitzmann et al. 2018)
-!     Uses the method of short characteristics (Olson & Kunasz 1987) with linear interpolants.
+!                - Jun 2024 : Change quadrature following Hogan (2024)
+!                - Nov 2026 : Cleaned up, Taylor expansions for thin layers
+! lw: Short characteristics method (e.g. Helios-r2: Kitzmann et al. 2018) with linear interpolants
+!     (Olson & Kunasz 1987), with the Extended Absorption Approximation (EAA, Li 2002) for scattering
 !     Pros: Very fast, accurate at high optical depths, very stable
-!     Cons: No lw scattering (but could combine with AA if needed)
+!     Cons: Not technically multiple scattering (can be quite innacurate at even moderate albedo)
+!
 !!!
 
 module lw_sc_linear_mod
   use, intrinsic :: iso_fortran_env
-  use WENO4_mod, only : interpolate_weno4  
+  use WENO4_mod, only : interpolate_weno4
   implicit none
 
   !! Precision variables
@@ -19,13 +21,12 @@ module lw_sc_linear_mod
 
   !! Required constants
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
-  real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
   !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
   !! here you can comment in/out groups of mu values for testing
-  !! make sure to make clean and recompile if you change these
-  
+  !! make sure to make clean and recompile if you change these.
+
   !! Optimised quadrature for 1 node - 2 stream (Hogan 2024)
   ! integer, parameter :: nmu = 1
   ! real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
@@ -68,25 +69,24 @@ contains
     real(dp), intent(out) :: olr
 
     !! Work variables
-    integer :: k
     real(dp), dimension(nlev) :: Te
     real(dp), dimension(nlev) :: be
     real(dp) :: be_int
 
-    !! Use WENO4 method to (smoothly) interpolate layers to levels
-    Te(:) = interpolate_weno4(pe, pl, Tl, .False.)
+    !! Use WENO4 method to (smoothly) interpolate layers to levels, in ln p
+    Te(:) = interpolate_weno4(log(pe), log(pl), Tl, .False.)
 
-    !! Edges are linearly interpolated to avoid overshoot
-    Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
-    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
+    !! Edges: log-linear extrapolation (log T against log p) through the neighbouring level
+    !! and the edge layer, to avoid overshoot
+    Te(1) = 10.0_dp**(log10(Te(2)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
+    Te(nlev) = 10.0_dp**(log10(Te(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Find integrated planck function for each level
     be(:) = (sb * Te(:)**4)/pi
-    be_int = (sb * Tint**4)/pi
+    be_int = (sb * Tint**4)/pi      ! internal flux added to the reflected downward intensity
 
     !! Longwave flux calculation
-    call lw_shortchar_linear(nlay, nlev, be(:), be_int, tau_e(:),  ssa(:), gg(:), & 
-      & lw_up(:), lw_down(:))
+    call lw_shortchar_linear(nlay, nlev, be(:), be_int, tau_e(:), ssa(:), gg(:), lw_up(:), lw_down(:))
 
     !! Net lw fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -103,45 +103,23 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: be, tau_in
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
-
     real(dp), intent(in) :: be_int
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: flx_up, flx_down
 
-    !! Work variables and arrays
+    !! Work variables
     integer :: k, m
-    real(dp), dimension(nlay) :: dtau, edel, w0, hg, eps, dtau_a
-    real(dp), dimension(nlay) :: del, e0i, e1i, e1i_del
-    real(dp), dimension(nlay) :: Am, Bm, Gp, Bp
+    real(dp), dimension(nlay) :: dtau, eps, dtau_a
+    real(dp), dimension(nlay) :: del, edel, e0i, Am, Bm
     real(dp), dimension(nlev) :: lw_up_g, lw_down_g
-    real(dp), dimension(nlay) :: fc, sigma_sq, pmom2, c
-    integer, parameter :: nstr = nmu*2
+    real(dp), parameter :: small_tau = 1.0e-3_dp
 
-    !! Calculate dtau in each layer
-    dtau(:) = tau_in(2:) - tau_in(1:nlay)
+    dtau(:) = tau_in(2:nlev) - tau_in(1:nlay)
 
-
-    where (g_in(:) >= 1e-6_dp)
-      fc(:) = g_in(:)**(nstr)
-      pmom2(:) = g_in(:)**(nstr+1)
-      sigma_sq(:) = real((nstr+1)**2 - nstr**2,dp) / &
-      & ( log(fc(:)**2/pmom2(:)**2) )
-      c(:) = exp(real(nstr**2,dp)/(2.0_dp*sigma_sq(:)))
-      fc(:) = c(:)*fc(:)
-
-      w0(:) = w_in(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*w_in(:)))
-      dtau(:) = (1.0_dp - w_in(:)*fc(:))*dtau(:)
-
-    elsewhere
-      w0(:) = w_in(:)
-    end where
-
-    hg(:) = g_in(:)
-
-    !! modified co-albedo epsilon
-    eps(:) = sqrt((1.0_dp - w0(:))*(1.0_dp - hg(:)*w0(:)))
-    !eps(:) = (1.0_dp - w0(:))
+    !! EAA modified co-albedo.  No delta scaling is needed because this
+    !! transport combination is invariant under a consistent delta transform.
+    eps(:) = sqrt((1.0_dp - w_in(:))*(1.0_dp - g_in(:)*w_in(:)))
 
     !! Absorption/modified optical depth for transmission function
     dtau_a(:) = eps(:)*dtau(:)
@@ -153,43 +131,34 @@ contains
     !! Start loops to integrate in mu space
     do m = 1, nmu
 
+      !! Olson & Kunasz (1987) linear interpolant coefficients: the source at the near level
+      !! (Am) and at the far level (Bm) of each layer along the characteristic.
+      !! Use their Taylor expansions at small slant absorption optical thickness.
       del(:) = dtau_a(:)/uarr(m)
-      edel(:) = exp(-del(:))
-      e0i(:) = 1.0_dp - edel(:)
-
-      !! Prepare loop
-      ! Olson & Kunasz (1987) linear interpolant parameters
-      where (edel(:) > 0.999_dp)
-        ! If we are in very low optical depth regime, then use an isothermal approximation
-        Am(:) = (0.5_dp*(be(2:) + be(1:nlay)) * e0i(:))/be(1:nlay)
-        Bm(:) = 0.0_dp
-        Gp(:) = 0.0_dp
-        Bp(:) = Am(:)
+      where (del(:) < small_tau)
+        Bm(:) = del(:)*(0.5_dp + del(:)*(-1.0_dp/6.0_dp + del(:)/24.0_dp))
+        Am(:) = del(:)*(0.5_dp + del(:)*(-1.0_dp/3.0_dp + del(:)/8.0_dp))
+        edel(:) = 1.0_dp - Am(:) - Bm(:)
       elsewhere
-        ! Use linear interpolants
-        e1i(:) = del(:) - e0i(:)
-        e1i_del(:) = e1i(:)/del(:) ! The equivalent to the linear in tau term
-
-        Am(:) = e0i(:) - e1i_del(:) ! Am(k) = Gp(k), just indexed differently
-        Bm(:) = e1i_del(:) ! Bm(k) = Bp(k), just indexed differently
-        Gp(:) = Am(:)
-        Bp(:) = Bm(:)
+        edel(:) = exp(-del(:))
+        e0i(:) = 1.0_dp - edel(:)
+        Bm(:) = (del(:) - e0i(:))/del(:)
+        Am(:) = e0i(:) - Bm(:)
       end where
 
-      !! Begin two-stream loops
+      !! Begin short characteristic sweeps
       !! Perform downward loop first
-      ! Top boundary condition - 0 flux downward from top boundary
+      ! Top boundary condition - no downward intensity at the top
       lw_down_g(1) = 0.0_dp
       do k = 1, nlay
-        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1) ! TS intensity
+        lw_down_g(k+1) = lw_down_g(k)*edel(k) + Am(k)*be(k) + Bm(k)*be(k+1)
       end do
 
       !! Perform upward loop
-      ! Lower boundary condition - internal heat definition Fint = F_down - F_up
-      ! here we use the same condition but use intensity units to be consistent
+      ! Lower boundary condition - internal heat definition Fint = F_up - F_down
       lw_up_g(nlev) = lw_down_g(nlev) + be_int
       do k = nlay, 1, -1
-        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bp(k)*be(k) + Gp(k)*be(k+1) ! TS intensity
+        lw_up_g(k) = lw_up_g(k+1)*edel(k) + Bm(k)*be(k) + Am(k)*be(k+1)
       end do
 
       !! Sum up flux arrays with Gaussian quadrature weights and points for this mu stream
@@ -198,7 +167,7 @@ contains
 
     end do
 
-    !! The flux is the intensity * pi
+    !! The flux is the integrated intensity * pi (in this GJ weighting scheme)
     flx_down(:) = pi * flx_down(:)
     flx_up(:) = pi * flx_up(:)
 

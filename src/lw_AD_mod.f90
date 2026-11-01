@@ -1,11 +1,24 @@
 !!!
 ! Elspeth KH Lee - Jun 2024 : Initial version
-! lw: Adding-Doubling method
+!                - Nov 2026 : Full implementation, converted from AddingDoublingRT (JAX/C++)
+!
+! lw: Adding-doubling method (matrix operator method; Plass, Kattawar & Catchings 1973;
+!     Hansen 1971), converted to Fortran from AddingDoublingRT (src_jax/doubling.py,
+!     adding.py, solver.py; same algorithm as the C++ src/), thermal emission only.
+!     Doubling:  reflection R, transmission T and thermal source vectors of each homogeneous
+!                layer, started from an optically thin sub-layer (single scattering) and
+!                doubled nn times, with the Planck function linear in tau inside the layer.
+!     Adding:    composites from the top (rtop) and from the bottom (rbase) of the column,
+!                then the up and down intensities at every interface from the two composites.
+!
+! Pros: accurate multiple scattering for any w and g, converges with nmu
+! Cons: nn ~ log2(dtau) + 16 doublings (N x N matrix solves) per layer - the most expensive
+!       of the matrix-free/two-stream class, though far cheaper than lw_disort
 !!!
 
 module lw_AD_mod
   use, intrinsic :: iso_fortran_env
-  use WENO4_mod, only : interpolate_weno4  
+  use WENO4_mod, only : interpolate_weno4
   implicit none
 
   !! Precision variables
@@ -13,43 +26,28 @@ module lw_AD_mod
 
   !! Required constants
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
-  real(dp), parameter :: twopi = 2.0_dp * pi
   real(dp), parameter :: sb = 5.670374419e-8_dp
 
-  !! Gauss quadrature variables, cosine angle values (uarr) and weights (w)
-  !! here you can comment in/out groups of mu values for testing
-  !! make sure to make clean and recompile if you change these
-  
-  !! Optimised quadrature for 1 node - 2 stream (Hogan 2024)
-  ! integer, parameter :: nmu = 1
-  ! real(dp), dimension(nmu), parameter :: uarr = (/0.6096748751_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = (/1.0_dp/)
-
-  !! Gauss–Jacobi-5 quadrature for 2 nodes - 4 stream (Hogan 2024)
-  !integer, parameter :: nmu = 2
-  !real(dp), dimension(nmu), parameter :: uarr = (/0.2509907356_dp, 0.7908473981_dp/)
-  !real(dp), dimension(nmu), parameter :: w = (/0.2300253764_dp, 0.7699746236_dp/)
-
-  !! Gauss–Jacobi-5 quadrature for 3 nodes - 6 stream (Hogan 2024)
-  ! integer, parameter :: nmu = 3
-  ! real(dp), dimension(nmu), parameter :: uarr = (/0.1024922169_dp, 0.4417960320_dp, 0.8633751621_dp/)
-  ! real(dp), dimension(nmu), parameter :: w = (/0.0437820218_dp, 0.3875796738_dp, 0.5686383044_dp/)
-
-  !! Gauss–Jacobi-5 quadrature for 4 nodes - 8 stream (Hogan 2024)
+  !! Number of Gauss-Legendre streams per hemisphere (2*nmu stream method)
   integer, parameter :: nmu = 4
-  real(dp), dimension(nmu), parameter :: uarr = (/0.0454586727_dp, 0.2322334416_dp, 0.5740198775_dp, 0.9030775973_dp/)
-  real(dp), dimension(nmu), parameter :: w = (/0.0092068785_dp, 0.1285704278_dp, 0.4323381850_dp, 0.4298845087_dp /)
 
-  !! Optical depth limit on optical depth of layers
-  real(dp), parameter :: dtau_lim = 0.01_dp
+  !! Number of phase function Legendre moments retained (delta-M truncates chi_(2 nmu))
+  integer, parameter :: nmom = 2*nmu
 
-  private :: lw_doubling_adding, matinv2, matinv4, ludcmp, lubksb, inv_LU
+  !! Layer (or composite) reflection, transmission and thermal sources.
+  !! ab: incident from the top (a) side, ba: incident from the bottom (b) side.
+  type :: ad_layer
+    real(dp), dimension(nmu,nmu) :: Rab, Rba, Tab, Tba
+    real(dp), dimension(nmu) :: sup, sdn
+  end type ad_layer
+
+  private :: lw_adding_doubling, layer_doubling, add_layers, gauss_legendre, &
+    & right_div, left_solve, lu_factor, lu_solve, ipow0
   public :: lw_AD
 
 contains
 
-
-  subroutine lw_AD(nlay, nlev, Tl, pl, pe, tau_e, ssa, gg, a_surf, Tint, lw_up, lw_down, lw_net, olr)
+  subroutine lw_AD(nlay, nlev, Tl, pl, pe, tau_e, ssa, gg, Tint, lw_up, lw_down, lw_net, olr)
     implicit none
 
     !! Input variables
@@ -58,7 +56,6 @@ contains
     real(dp), dimension(nlev), intent(in) :: pe
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
-    real(dp), intent(in) :: a_surf
     real(dp), intent(in) :: Tint
 
     !! Output variables
@@ -66,24 +63,22 @@ contains
     real(dp), intent(out) :: olr
 
     !! Work variables
-    real(dp), dimension(nlev) :: Te
-    real(dp), dimension(nlev) :: be
+    real(dp), dimension(nlev) :: Te, be
     real(dp) :: be_int
 
-    !! Use WENO4 method to (smoothly) interpolate layers to levels
-    Te(:) = interpolate_weno4(pe, pl, Tl, .False.)
+    !! Use WENO4 method to (smoothly) interpolate layers to levels, in ln p
+    Te(:) = interpolate_weno4(log(pe), log(pl), Tl, .False.)
 
-    !! Edges are linearly interpolated to avoid overshoot
-    Te(1) = 10.0_dp**(log10(Tl(1)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
-    Te(nlev) = 10.0_dp**(log10(Tl(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
+    !! Edges are linearly extrapolated in log(p)-log(T) space.
+    Te(1) = 10.0_dp**(log10(Te(2)) + (log10(pe(1)/pe(2))/log10(pl(1)/pe(2))) * log10(Tl(1)/Te(2)))
+    Te(nlev) = 10.0_dp**(log10(Te(nlay)) + (log10(pe(nlev)/pe(nlay))/log10(pl(nlay)/pe(nlay))) * log10(Tl(nlay)/Te(nlay)))
 
     !! Find integrated planck function for each level
     be(:) = (sb * Te(:)**4)/pi
     be_int = (sb * Tint**4)/pi
 
     !! Longwave flux calculation
-    call lw_adding_doubling(nlay, nlev, be(:), be_int, tau_e(:), ssa(:), gg(:), &
-      & lw_up(:), lw_down(:))
+    call lw_adding_doubling(nlay, nlev, be(:), be_int, tau_e(:), ssa(:), gg(:), lw_up(:), lw_down(:))
 
     !! Net lw fluxes at each level
     lw_net(:) = lw_up(:) - lw_down(:)
@@ -105,383 +100,354 @@ contains
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: flx_up, flx_down
 
-    !! Work variables
-    integer :: k, m
-    real(dp), dimension(nlay) :: bm, bl
-    real(dp), dimension(nlay) :: dtau, w0, hg
+    !! Work variables and arrays
+    integer :: k, l, i, j, ltot
+    real(dp), dimension(nmu) :: mu, wt, Iup, Idn
+    real(dp), dimension(nmom, nmu) :: Pl
+    real(dp), dimension(nmom) :: chi, c2l, sgn
+    real(dp), dimension(nmu,nmu) :: Ppp, Ppm, Imat
+    real(dp), dimension(nlay) :: dtau, w0
+    real(dp) :: f, colsum
+    type(ad_layer), dimension(nlay+1) :: lay
+    type(ad_layer), dimension(nlay+1) :: rtop, rbase
 
-    real(dp), dimension(nmu, nmu) :: G
-    real(dp), dimension(nmu, nmu) :: I
+    !! Gauss-Legendre nodes and weights on [0,1] (sum(wt) = 1, sum(wt*mu) = 1/2)
+    call gauss_legendre(nmu, mu, wt)
 
-
-    real(dp), dimension(nlev, nmu) :: sp, sm, sp_add, sm_add
-
-    dtau(:) = tau_in(2:nlev) - tau_in(1:nlay)
-
-    w0(:) = w_in(:)
-    hg(:) = g_in(:)
-
-
-    do k = 1, nlay
-      if (dtau(k) <= 1.0e-6_dp) then
-        ! For low optical depths use the isothermal approimation
-        bm(k) = 0.5_dp*(be(k+1) + be(k))
-        bl(k) = 0.0_dp
-      else
-        bm(k) = 0.5_dp*(be(k+1) + be(k))
-        bl(k) = (be(k+1) - be(k))/dtau(k) ! Linear in tau term
-      endif
+    !! Legendre polynomials P_l(mu_i), l = 0..nmom-1 (stored at l+1)
+    Pl(1,:) = 1.0_dp
+    Pl(2,:) = mu(:)
+    do l = 2, nmom-1
+      Pl(l+1,:) = (real(2*l-1,dp)*mu(:)*Pl(l,:) - real(l-1,dp)*Pl(l-1,:))/real(l,dp)
     end do
 
-    ! TOA Reflection boundary
-    R(1,:,:) = 
-    ! TOA Transmission boundary
-    T(1,:,:) = 
-    ! TOA emissivity and slope
-    y(1,:) =
-    z(1,:) = 
+    !! (2l+1) and (-1)^l factors of the phase matrix expansion
+    do l = 0, nmom-1
+      c2l(l+1) = real(2*l+1,dp)
+      sgn(l+1) = (-1.0_dp)**l
+    end do
 
-    sp(1,:) =
-    sm(1,:) =  
+    Imat(:,:) = 0.0_dp
+    do i = 1, nmu
+      Imat(i,i) = 1.0_dp
+    end do
 
-    !! Identity matrix
-    I(:,:) = 0.0_dp
+    !! Layer optical depths
+    dtau(:) = tau_in(2:nlev) - tau_in(1:nlay)
+    w0(:) = min(max(w_in(:), 0.0_dp), 1.0_dp)
 
-    !! Begin loop from top of atmosphere to bottom to find transmision and emission and each layer boundary
-    !! Perform doubling scheme as required when dtau > dtau_lim
+    !! Doubling - R, T and thermal sources of each layer
     do k = 1, nlay
 
-      !if (dtau(k) <= dtau_lim*uarr(1)) then
-        !! Safe to perform the adding method directly
+      Ppp(:,:) = 0.0_dp
+      Ppm(:,:) = 0.0_dp
 
-        gt = dtau(k)
+      if (w0(k) > 0.0_dp .and. dtau(k) > 0.0_dp) then
 
-        !! Calculate Gamma 
-        G(:,:) = I(:,:) - matmul(R(k,:,:),R(k,:,:))
-        G(:,:) = matinv2(G(:,:)) ! Assume 4 stream for now
+        !! Henyey-Greenstein moments, delta-M scaled with the first truncated moment chi_(2 nmu)
+        f = g_in(k)**nmom
+        do l = 0, nmom-1
+          chi(l+1) = g_in(k)**l
+        end do
+        if (f > 1.0e-12_dp .and. f < 1.0_dp - 1.0e-12_dp) then
+          chi(:) = (chi(:) - f)/(1.0_dp - f)
+          dtau(k) = (1.0_dp - w0(k)*f)*dtau(k)
+          w0(k) = w0(k)*(1.0_dp - f)/(1.0_dp - w0(k)*f)
+        end if
 
-        !! Calculate Reflection coefficent for next layer
-        !! Equation is: R(k+1,:,:) = T(k,:,:) * G(k,:,:) * R(k,:,:) * T(k,:,:) + R(k,:,:)
-        R(k+1,:,:) = matmul(T(k,:,:),G(:,:))
-        R(k+1,:,:) = matmul(R(k+1,:,:),R(k,:,:))
-        R(k+1,:,:) = matmul(R(k+1,:,:),T(k,:,:))
-        R(k+1,:,:) = R(k+1,:,:) + R(k,:,:)
-
-        !! Calculate Transmission coefficent for next layer
-        !! Equation is: T(k+1,:,:) = T(k,:,:) * G(k,:,:) * T(k,:,:)
-        T(k+1,:,:) = matmul(T(k,:,:),G(:,:))
-        T(k+1,:,:) = matmul(T(k+1,:,:),T(k,:,:))
-      
-        z(k+1,:) = (matmul(T(k,:,:),G(:,:)) - matmul(matmul(T(k,:,:),G(:,:)),R(k,:,:))) * (z(k,:) - gt*y(k,:)) + gt*y(k,:) + z(k,:)
-        y(k+1,:) = (matmul(T(k,:,:),G(:,:)) + matmul(matmul(T(k,:,:),G(:,:)),R(k,:,:)) + I(:,:)) * y(k,:)
-
-        sp(k+1,:) = y(k+1,:) * bm(k) + bl(k)*z(k+1,:)
-        sm(k+1,:) = y(k+1,:) * bm(k) - bl(k)*z(k+1,:)
-
-        cycle
-
-
-      !else
-        !! Must perform the doubling method for sub-layers until dtau_lim is reached
-        !! Its probably best to split into equal dtau sub-layers
-
-        !! Find number if doubling layers and initial sub-layer dtau
-        nsub = int((log10(dtau(k)/(dtau_lim*uarr(1)))/log10(2.0_dp) + 1.0_dp))
-        dtau_sub = dtau(k)/(2.0_dp**(nsub))
-
-        gt = dtau_sub
-  
-        !! Do initial calculate at dtau_sub - take layer above as initial conditions
-
-        !! Calculate Gamma 
-        G_s(:,:) = I(:,:) - matmul(R(k,:,:),R(k,:,:))
-        G_s(:,:) = matinv2(G_s(:,:)) ! Assume 4 stream for now
-
-        !! Calculate Reflection coefficent for next layer
-        !! Equation is: R(k+1,:,:) = T(k,:,:) * G(k,:,:) * R(k,:,:) * T(k,:,:) + R(k,:,:)
-        R_s(:,:) = matmul(T(k,:,:),G(k,:,:))
-        R_s(:,:) = matmul(R_s(:,:),R(k,:,:))
-        R_s(:,:) = matmul(R_s(:,:),T(k,:,:))
-        R_s(:,:) = R_s(:,:) + R(k,:,:)
-
-        !! Calculate Transmission coefficent for next layer
-        !! Equation is: T(k+1,:,:) = T(k,:,:) * G(k,:,:) * T(k,:,:)
-        T_s(:,:) = matmul(T(k,:,:),G(k,:,:))
-        T_s(:,:) = matmul(T_s(:,:),T(k,:,:))
-      
-        z_s(:) = (matmul(T(k,:,:),G(k,:,:)) - matmul(matmul(T(k,:,:),G(k,:,:)),R(k,:,:))) * (z(k,:) - gt*y(k,:)) + gt*y(k,:) + z(k,:)
-        y_s(:) = (matmul(T(k,:,:),G(k,:,:)) + matmul(matmul(T(k,:,:),G(k,:,:)),R(k,:,:)) + I(:,:)) * y(k,:)
-
-        sp_s(:) = y_s(:) * bm(k) + bl(k)*z_s(:)
-        sm_s(:) = y_s(:) * bm(k) - bl(k)*z_s(:)
-
-        !! We now have the values for the initial sub-layer
-
-        do d = 2, nsub-1
-
-          ! Increase sub layer dtau by 2
-          dtau_sub = dtau_sub * 2.0_dp
-
-          gt = dtau_sub
-
-          ! Perform doubling
-
-
-          ! Peform adding
-
+        !! Azimuthally averaged phase matrices for same (Ppp) and opposite (Ppm) hemispheres:
+        !! P(+/-mu_i, mu_j) = sum_l (2l+1) chi_l P_l(mu_i) P_l(mu_j) (+/-1)^l / (2 pi)
+        do j = 1, nmu
+          do i = 1, nmu
+            Ppp(i,j) = sum(c2l(:)*chi(:)*Pl(:,i)*Pl(:,j))/(2.0_dp*pi)
+            Ppm(i,j) = sum(sgn(:)*c2l(:)*chi(:)*Pl(:,i)*Pl(:,j))/(2.0_dp*pi)
+          end do
         end do
 
-        !! The values at the next computational level are the properties at the origonal level and last added sub-layer
-        gt = dtau(k)
+        !! Hansen normalisation: each incident stream j scatters exactly w0 of its energy
+        do j = 1, nmu
+          colsum = sum((Ppp(:,j) + Ppm(:,j))*wt(:))
+          if (colsum > 0.0_dp) then
+            Ppp(:,j) = Ppp(:,j)/(2.0_dp*pi*colsum)
+            Ppm(:,j) = Ppm(:,j)/(2.0_dp*pi*colsum)
+          end if
+        end do
 
-        !! Calculate Gamma 
-        G(:,:) = I(:,:) - matmul(R_s(:,:),R_s(:,:))
-        G(:,:) = matinv2(G(:,:)) ! Assume 4 stream for now
+      end if
 
-        !! Calculate Reflection coefficent for next layer
-        !! Equation is: R(k+1,:,:) = T(k,:,:) * G(k,:,:) * R(k,:,:) * T(k,:,:) + R(k,:,:)
-        R(k+1,:,:) = matmul(T_s(:,:),G(:,:))
-        R(k+1,:,:) = matmul(R(k+1,:,:),R_s(:,:))
-        R(k+1,:,:) = matmul(R(k+1,:,:),T_s(:,:))
-        R(k+1,:,:) = R(k+1,:,:) + R_s(:,:)
-
-        !! Calculate Transmission coefficent for next layer
-        !! Equation is: T(k+1,:,:) = T(k,:,:) * G(k,:,:) * T(k,:,:)
-        T(k+1,:,:) = matmul(T_s(:,:),G(:,:))
-        T(k+1,:,:) = matmul(T(k+1,:,:),T_s(:,:))
-      
-        z(k+1,:) = (matmul(T_s(:,:),G(:,:)) - matmul(matmul(T_s(:,:),G(:,:)),R_s(:,:))) * (z_s(:) - gt_s*y_s(:)) + gt_s*y_s(:) + z_s(:)
-        y(k+1,:) = (matmul(T_s(:,:),G(:,:)) + matmul(matmul(T_s(:,:),G(:,:)),R_s(:,:)) + I(:,:)) * y_s(:)
-
-        sp(k+1,:) = y(k+1,:) * bm(k) + bl(k)*z(k+1,:)
-        sm(k+1,:) = y(k+1,:) * bm(k) - bl(k)*z(k+1,:)
-
-
-      !end if
+      call layer_doubling(dtau(k), w0(k), be(k), be(k+1), Ppp, Ppm, mu, wt, Imat, lay(k))
 
     end do
 
-    !! Now we know the Reflection and Transmission and source coefficents for each level
-    !! Do the final adding step starting at the top of the atmosphere to get the source coefficent for the entire atmosphere
-    do k = 2, nlev
-      Rac(:,:) =  
-      Rca(:,:) = 
+    !! Lower boundary "surface layer": I_up = I_down + B(Tint) in every stream
+    ltot = nlay + 1
+    lay(ltot)%Rab(:,:) = Imat(:,:)
+    lay(ltot)%Rba(:,:) = Imat(:,:)
+    lay(ltot)%Tab(:,:) = 0.0_dp
+    lay(ltot)%Tba(:,:) = 0.0_dp
+    lay(ltot)%sup(:) = be_int
+    lay(ltot)%sdn(:) = 0.0_dp
+
+    !! Adding - composites from the bottom (rbase(n): bottom n layers) and from the top
+    !! (rtop(n): top n layers)
+    rbase(1) = lay(ltot)
+    do l = 2, ltot
+      call add_layers(lay(ltot-l+1), rbase(l-1), Imat, rbase(l))
     end do
 
-    !! Downward and upward fluxes are calculated as quadrature
-    flx_up(:) = 0.0_dp
-    flx_down(:) = 0.0_dp
-    do m = 1, nmu
-      flx_up(:) = flx_up(:) + sp_add(:,m)*w(m)
-      flx_down(:) = flx_down(:) + sm_add(:,m)*w(m)
+    rtop(1) = lay(1)
+    do l = 2, nlay
+      call add_layers(rtop(l-1), lay(l), Imat, rtop(l))
     end do
 
+    !! Top of atmosphere - no incident intensity from above
+    Iup(:) = rbase(ltot)%sup(:)
+    flx_up(1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Iup(:))
+    flx_down(1) = 0.0_dp
+
+    !! Interfaces below layer l: top composite rtop(l), base composite rbase(ltot-l)
+    !! I_up = (I - Rab_b Rba_t)^-1 (Rab_b sdn_t + sup_b),  I_dn = (I - Rba_t Rab_b)^-1 (Rba_t sup_b + sdn_t)
+    do l = 1, nlay
+      associate (t => rtop(l), b => rbase(ltot-l))
+        Iup(:) = left_solve(Imat - matmul(b%Rab, t%Rba), matmul(b%Rab, t%sdn) + b%sup)
+        Idn(:) = left_solve(Imat - matmul(t%Rba, b%Rab), matmul(t%Rba, b%sup) + t%sdn)
+      end associate
+      flx_up(l+1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Iup(:))
+      flx_down(l+1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Idn(:))
+    end do
 
   end subroutine lw_adding_doubling
 
-  pure function matinv2(A) result(B)
-    !! Performs a direct calculation of the inverse of a 2×2 matrix.
-    real(dp), intent(in) :: A(2,2)   !! Matrix
-    real(dp)             :: B(2,2)   !! Inverse matrix
-    real(dp)             :: detinv
-
-    ! Calculate the inverse determinant of the matrix
-    detinv = 1.0_dp/(A(1,1)*A(2,2) - A(1,2)*A(2,1))
-
-    ! Calculate the inverse of the matrix
-    B(1,1) = detinv * A(2,2)
-    B(2,1) = -detinv * A(2,1)
-    B(1,2) = -detinv * A(1,2)
-    B(2,2) = detinv * A(1,1)
-
-  end function matinv2
-
-  pure function matinv4(A) result(B)
-    !! Performs a direct calculation of the inverse of a 4×4 matrix.
-    real(dp), intent(in) :: A(4,4)   !! Matrix
-    real(dp)             :: B(4,4)   !! Inverse matrix
-    real(dp)             :: detinv, s0, s1, s2, s3, s4, s5, c5, c4, c3, c2, c1, c0
-
-    s0 = A(1,1) * A(2,2) - A(2,1) * A(1,2)
-    s1 = A(1,1) * A(2,3) - A(2,1) * A(1,3)
-    s2 = A(1,1) * A(2,4) - A(2,1) * A(1,4)
-    s3 = A(1,2) * A(2,3) - A(2,2) * A(1,3)
-    s4 = A(1,2) * A(2,4) - A(2,2) * A(1,4)
-    s5 = A(1,3) * A(2,4) - A(2,3) * A(1,4)
-
-    c5 = A(3,3) * A(4,4) - A(4,3) * A(3,4)
-    c4 = A(3,2) * A(4,4) - A(4,2) * A(3,4)
-    c3 = A(3,2) * A(4,3) - A(4,2) * A(3,3)
-    c2 = A(3,1) * A(4,4) - A(4,1) * A(3,4)
-    c1 = A(3,1) * A(4,3) - A(4,1) * A(3,3)
-    c0 = A(3,1) * A(4,2) - A(4,1) * A(3,2)
-
-    detinv = 1.0_dp / (s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0)
-
-    B(1,1) = ( A(2,2) * c5 - A(2,3) * c4 + A(2,4) * c3) * detinv
-    B(1,2) = (-A(1,2) * c5 + A(1,3) * c4 - A(1,4) * c3) * detinv
-    B(1,3) = ( A(4,2) * s5 - A(4,3) * s4 + A(4,4) * s3) * detinv
-    B(1,4) = (-A(3,2) * s5 + A(3,3) * s4 - A(3,4) * s3) * detinv
-
-    B(2,1) = (-A(2,1) * c5 + A(2,3) * c2 - A(2,4) * c1) * detinv
-    B(2,2) = ( A(1,1) * c5 - A(1,3) * c2 + A(1,4) * c1) * detinv
-    B(2,3) = (-A(4,1) * s5 + A(4,3) * s2 - A(4,4) * s1) * detinv
-    B(2,4) = ( A(3,1) * s5 - A(3,3) * s2 + A(3,4) * s1) * detinv
-
-    B(3,1) = ( A(2,1) * c4 - A(2,2) * c2 + A(2,4) * c0) * detinv
-    B(3,2) = (-A(1,1) * c4 + A(1,2) * c2 - A(1,4) * c0) * detinv
-    B(3,3) = ( A(4,1) * s4 - A(4,2) * s2 + A(4,4) * s0) * detinv
-    B(3,4) = (-A(3,1) * s4 + A(3,2) * s2 - A(3,4) * s0) * detinv
-
-    B(4,1) = (-A(2,1) * c3 + A(2,2) * c1 - A(2,3) * c0) * detinv
-    B(4,2) = ( A(1,1) * c3 - A(1,2) * c1 + A(1,3) * c0) * detinv
-    B(4,3) = (-A(4,1) * s3 + A(4,2) * s1 - A(4,3) * s0) * detinv
-    B(4,4) = ( A(3,1) * s3 - A(3,2) * s1 + A(3,3) * s0) * detinv
-
-  end function matinv4
-
-  subroutine ludcmp(A,n,np,indx,D)
+  !! R, T and thermal sources of one homogeneous layer by doubling
+  subroutine layer_doubling(tau, omega, B_top, B_bot, Ppp, Ppm, mu, wt, Imat, lyr)
     implicit none
 
-    integer, intent(in) :: n, np
-    real(dp), dimension(np,np), intent(inout) :: A
+    real(dp), intent(in) :: tau, omega, B_top, B_bot
+    real(dp), dimension(nmu,nmu), intent(in) :: Ppp, Ppm, Imat
+    real(dp), dimension(nmu), intent(in) :: mu, wt
+    type(ad_layer), intent(out) :: lyr
 
-    integer, dimension(n), intent(out) :: indx
-    real(dp), intent(out) :: D
+    integer :: i, n, nn
+    real(dp) :: B_bar, B_d, tau0, g, con
+    real(dp), dimension(nmu) :: trans, slope, y, z, zpgy
+    real(dp), dimension(nmu,nmu) :: R, T, TG, TGR, Gpp, Gpm
 
-    integer, parameter :: nmax = 100
-    real(dp), parameter :: tiny = 1.0e-20_dp
-    real(dp), dimension(nmax) :: vv
+    !! Planck function linear in tau: mean and slope over the layer
+    B_bar = 0.5_dp*(B_bot + B_top)
+    if (tau > 0.0_dp) then
+      B_d = (B_bot - B_top)/tau
+    else
+      B_d = 0.0_dp
+    end if
 
-    integer :: i, j, k, imax
-    real(dp) :: aamax, dum, sum
+    lyr%Rab(:,:) = 0.0_dp
+    lyr%Rba(:,:) = 0.0_dp
+    lyr%Tab(:,:) = Imat(:,:)
+    lyr%Tba(:,:) = Imat(:,:)
+    lyr%sup(:) = 0.0_dp
+    lyr%sdn(:) = 0.0_dp
 
-    D = 1.0_dp
+    !! Zero optical depth - transparent layer
+    if (tau <= 0.0_dp) then
+      return
+    end if
 
-    do i = 1, n
-      aamax = 0.0_dp
-      do j = 1, n
-        if (abs(A(i,j)) > aamax) then
-          aamax = abs(A(i,j))
-        end if
+    !! Pure absorption - exact diagonal transmission and linear-in-tau emission
+    if (omega <= 0.0_dp) then
+      trans(:) = exp(max(-tau/mu(:), -200.0_dp))
+      slope(:) = mu(:)*(1.0_dp - trans(:)) - 0.5_dp*tau*(1.0_dp + trans(:))
+      lyr%Tab(:,:) = 0.0_dp
+      do i = 1, nmu
+        lyr%Tab(i,i) = trans(i)
       end do
-      if (aamax == 0.0_dp) then
-        print*, 'singualr matrix in LU decomp!'
-        stop
-      end if
-      vv(i) = 1.0_dp/aamax
+      lyr%Tba(:,:) = lyr%Tab(:,:)
+      lyr%sup(:) = B_bar*(1.0_dp - trans(:)) + B_d*slope(:)
+      lyr%sdn(:) = B_bar*(1.0_dp - trans(:)) - B_d*slope(:)
+      return
+    end if
+
+    !! Scattering layer - single-scattering operators of an infinitesimal layer:
+    !! Gpp = (I - 2 pi w Ppp C)/mu, Gpm = 2 pi w Ppm C/mu, C = diag(wt)
+    con = 2.0_dp*pi*omega
+    do i = 1, nmu
+      Gpp(i,:) = (Imat(i,:) - con*Ppp(i,:)*wt(:))/mu(i)
+      Gpm(i,:) = con*Ppm(i,:)*wt(:)/mu(i)
     end do
 
-  
-    do j = 1, n
-      do i = 1, j-1
-        sum = A(i,j)
-        do k = 1, i-1
-          sum = sum  - A(i,k)*A(k,j)
-        end do
-        A(i,j) = sum
-      end do
-      aamax = 0.0_dp
-      do i = j, n
-        sum = A(i,j)
-        do k = 1, j-1
-          sum = sum  - A(i,k)*A(k,j)
-        end do
-        A(i,j) = sum
-        dum = vv(i)*abs(sum)
-        if (dum >= aamax) then
-          imax = i
-          aamax = dum
-        end if
-      end do
-      if (j /= imax) then
-        do k = 1, n
-          dum = A(imax,k)
-          A(imax,k) = A(j,k)
-          A(j,k) = dum
-        end do 
-        D = -D
-        vv(imax) = vv(j)
-      end if
-      indx(j) = imax
-      if (A(j,j) <= tiny) then
-        A(j,j) = tiny
-      end if
-      if (j /= n) then
-        dum = 1.0_dp/A(j,j)
-        do i = j+1, n
-          A(i,j) = A(i,j)*dum
-        end do
-      end if
+    !! Number of doublings: start from tau0 = tau/2^nn, thin enough for single scattering
+    nn = max(int(log(tau)/log(2.0_dp)) + ipow0(omega), 1)
+    tau0 = tau/(2.0_dp**nn)
+
+    !! Initial thin sub-layer: R, T and the thermal source basis (s = y B_bar +/- z B_d)
+    R(:,:) = tau0*Gpm(:,:)
+    T(:,:) = Imat(:,:) - tau0*Gpp(:,:)
+    y(:) = (1.0_dp - omega)*tau0/mu(:)
+    z(:) = 0.0_dp
+    g = 0.5_dp*tau0
+
+    !! Doubling: combine two identical sub-layers of depth 2g into one of depth 4g
+    do n = 1, nn
+      TG(:,:) = right_div(T, Imat - matmul(R, R))  ! T (I - R^2)^-1
+      TGR(:,:) = matmul(TG, R)
+
+      zpgy(:) = z(:) + g*y(:)
+      z(:) = matmul(TG - TGR, zpgy) + z(:) - g*y(:)
+      y(:) = matmul(TG + TGR, y) + y(:)
+
+      R(:,:) = R(:,:) + matmul(TGR, T)
+      T(:,:) = matmul(TG, T)
+
+      g = 2.0_dp*g
     end do
 
-  end subroutine ludcmp
+    !! Homogeneous layer: symmetric about its mid-plane
+    lyr%Rab(:,:) = R(:,:)
+    lyr%Rba(:,:) = R(:,:)
+    lyr%Tab(:,:) = T(:,:)
+    lyr%Tba(:,:) = T(:,:)
+    lyr%sup(:) = y(:)*B_bar + z(:)*B_d
+    lyr%sdn(:) = y(:)*B_bar - z(:)*B_d
 
-  subroutine lubksb(A, n, np, indx, B)
+  end subroutine layer_doubling
+
+  !! Combine a top layer and a bottom layer into one composite
+  subroutine add_layers(top, bot, Imat, comb)
     implicit none
 
-    integer, intent(in) :: n, np
-    integer, dimension(n), intent(in) :: indx
-    real(dp), dimension(np,np), intent(in) :: A
+    type(ad_layer), intent(in) :: top, bot
+    real(dp), dimension(nmu,nmu), intent(in) :: Imat
+    type(ad_layer), intent(out) :: comb
 
-    real(dp), dimension(n), intent(out) :: B
+    real(dp), dimension(nmu,nmu) :: TD1, TD2
 
-    integer :: i, j, ii, ll
-    real(dp) :: sum
+    !! Multiple reflections between the two layers: (I - Rab_bot Rba_top)^-1, (I - Rba_top Rab_bot)^-1
+    TD1(:,:) = right_div(top%Tba, Imat - matmul(bot%Rab, top%Rba))
+    TD2(:,:) = right_div(bot%Tab, Imat - matmul(top%Rba, bot%Rab))
 
-    ii = 0
+    comb%Rab(:,:) = top%Rab(:,:) + matmul(matmul(TD1, bot%Rab), top%Tab)
+    comb%Rba(:,:) = bot%Rba(:,:) + matmul(matmul(TD2, top%Rba), bot%Tba)
+    comb%Tab(:,:) = matmul(TD2, top%Tab)
+    comb%Tba(:,:) = matmul(TD1, bot%Tba)
 
-    do i = 1, n
-      ll = indx(i)
-      sum = B(ll)
-      b(ll) = b(i)
-      if (ii /= 0) then
-        do j = ii,i-1
-          sum = sum - A(i,j)*B(j)
-        end do
-      else if (sum /= 0.0_dp) then
-        ii = i
-      end if
-      B(i) = sum
-    end do
+    comb%sup(:) = top%sup(:) + matmul(TD1, bot%sup + matmul(bot%Rab, top%sdn))
+    comb%sdn(:) = bot%sdn(:) + matmul(TD2, top%sdn + matmul(top%Rba, bot%sup))
 
-    do i = n, 1, -1
-      sum = B(i)
-      if (i < n) then
-        do j = i+1, n
-          sum = sum - A(i,j)*B(j)
-        end do
-      end if
-      B(i) = sum/A(i,i)
-    end do
-    
-  end subroutine lubksb
+  end subroutine add_layers
 
-  subroutine inv_LU(A,n,np,Y)
+  !! Adaptive number of initial doublings: single-scattering error is O(tau0^2 w^2)
+  integer function ipow0(omega)
+    real(dp), intent(in) :: omega
+    if (omega < 0.01_dp) then
+      ipow0 = 4
+    else if (omega < 0.1_dp) then
+      ipow0 = 10
+    else
+      ipow0 = 16
+    end if
+  end function ipow0
+
+  !! Gauss-Legendre nodes and weights on [0,1]
+  subroutine gauss_legendre(n, x, wq)
     implicit none
 
-    integer, intent(in) :: n, np
-    real(dp), dimension(np,np), intent(inout) :: A
+    integer, intent(in) :: n
+    real(dp), dimension(n), intent(out) :: x, wq
 
-    integer, dimension(n) :: indx
-    real(dp), dimension(np,np), intent(out) :: Y
+    integer :: i, k, it
+    real(dp) :: z, dz, p0, p1, pk, pp
 
-    real(dp) :: D
-    integer :: i, j
-
-    do i = 1, n
-      do j = 1, n
-        Y(i,j) = 0.0_dp
+    do i = 1, (n + 1)/2
+      z = cos(pi*(real(i,dp) - 0.25_dp)/(real(n,dp) + 0.5_dp))
+      do it = 1, 100
+        p0 = 1.0_dp
+        p1 = z
+        do k = 2, n
+          pk = (real(2*k-1,dp)*z*p1 - real(k-1,dp)*p0)/real(k,dp)
+          p0 = p1
+          p1 = pk
+        end do
+        pp = real(n,dp)*(z*p1 - p0)/(z*z - 1.0_dp)
+        dz = -p1/pp
+        z = z + dz
+        if (abs(dz) < 1.0e-15_dp) exit
       end do
-      Y(i,i) = 1.0_dp
+      x(i) = 0.5_dp*(1.0_dp - z)
+      x(n+1-i) = 0.5_dp*(1.0_dp + z)
+      wq(i) = 1.0_dp/((1.0_dp - z*z)*pp*pp)
+      wq(n+1-i) = wq(i)
     end do
 
-    call ludcmp(A,n,np,indx,D)
+  end subroutine gauss_legendre
 
-    do j = 1, n
-      call lubksb(A,n,np,indx,Y(1,j))
+  !! X = B A^-1 (solves A^T X^T = B^T row by row)
+  function right_div(B, A) result(X)
+    real(dp), dimension(nmu,nmu), intent(in) :: B, A
+    real(dp), dimension(nmu,nmu) :: X
+    real(dp), dimension(nmu,nmu) :: At
+    integer, dimension(nmu) :: piv
+    integer :: i
+    At(:,:) = transpose(A)
+    call lu_factor(At, piv)
+    do i = 1, nmu
+      X(i,:) = B(i,:)
+      call lu_solve(At, piv, X(i,:))
     end do
+  end function right_div
 
-  end subroutine inv_LU
+  !! x = A^-1 b
+  function left_solve(A, b) result(x)
+    real(dp), dimension(nmu,nmu), intent(in) :: A
+    real(dp), dimension(nmu), intent(in) :: b
+    real(dp), dimension(nmu) :: x
+    real(dp), dimension(nmu,nmu) :: LU
+    integer, dimension(nmu) :: piv
+    LU(:,:) = A(:,:)
+    call lu_factor(LU, piv)
+    x(:) = b(:)
+    call lu_solve(LU, piv, x)
+  end function left_solve
+
+  !! In-place LU factorisation with partial pivoting
+  subroutine lu_factor(A, piv)
+    real(dp), dimension(nmu,nmu), intent(inout) :: A
+    integer, dimension(nmu), intent(out) :: piv
+    integer :: i, k, p
+    real(dp), dimension(nmu) :: row
+    do k = 1, nmu
+      p = k - 1 + maxloc(abs(A(k:nmu,k)), dim=1)
+      piv(k) = p
+      if (p /= k) then
+        row(:) = A(k,:)
+        A(k,:) = A(p,:)
+        A(p,:) = row(:)
+      end if
+      do i = k+1, nmu
+        A(i,k) = A(i,k)/A(k,k)
+        A(i,k+1:nmu) = A(i,k+1:nmu) - A(i,k)*A(k,k+1:nmu)
+      end do
+    end do
+  end subroutine lu_factor
+
+  !! Solve LU x = b in place, with the row swaps of lu_factor
+  subroutine lu_solve(A, piv, b)
+    real(dp), dimension(nmu,nmu), intent(in) :: A
+    integer, dimension(nmu), intent(in) :: piv
+    real(dp), dimension(nmu), intent(inout) :: b
+    integer :: i, k
+    real(dp) :: tmp
+    do k = 1, nmu
+      if (piv(k) /= k) then
+        tmp = b(k)
+        b(k) = b(piv(k))
+        b(piv(k)) = tmp
+      end if
+    end do
+    do i = 2, nmu
+      b(i) = b(i) - sum(A(i,1:i-1)*b(1:i-1))
+    end do
+    do i = nmu, 1, -1
+      b(i) = (b(i) - sum(A(i,i+1:nmu)*b(i+1:nmu)))/A(i,i)
+    end do
+  end subroutine lu_solve
 
 end module lw_AD_mod
