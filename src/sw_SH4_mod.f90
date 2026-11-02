@@ -20,6 +20,10 @@ module sw_SH4_mod
   !! Precision variables
   integer, parameter :: dp = REAL64
 
+  !! Single scattering albedo cap - exactly conservative scattering (w = 1, eigenvalue k = 0) is singular.
+  !! 1 - 1e-12 absorbs < 1e-8 of the incident flux even in a tau ~ 6000 column
+  real(dp), parameter :: w_max = 1.0_dp - 1.0e-12_dp
+
   !! Required constants
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
   real(dp), parameter :: twopi = 2.0_dp * pi
@@ -129,6 +133,7 @@ contains
     !! Delta-M with f = chi_nstr (g**nstr for OTHG as PICASO, the TTHG moment for TTHG)
     f_deltaM(:) = chi(nstr,:)
     w0(:) = w_in(:)*(1.0_dp - f_deltaM(:))/(1.0_dp - w_in(:)*f_deltaM(:))
+    w0(:) = min(w0(:), w_max)
     dtau(:) = (tau_in(2:nlev) - tau_in(1:nlay))*(1.0_dp - w_in(:)*f_deltaM(:))
     tau(1) = 0.0_dp
     do k = 1, nlay

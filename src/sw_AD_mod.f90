@@ -7,8 +7,10 @@
 !     Doubling:  reflection R, transmission T and beam source vectors of each homogeneous
 !                layer, started from an optically thin sub-layer (single scattering of the
 !                beam) and doubled nn times.
-!     Adding:    composites from the top (rtop) and from the bottom (rbase) of the column,
-!                then the up and down diffuse intensities at every interface from the two composites.
+!     Adding:    one-sided (Riccati): composites from the bottom (reflection for light from above, RbR,
+!                and upward beam source, Rbs - the only parts needed), then a single downward sweep
+!                I_dn(l+1) = (I - R_l RbR_{l+1})^-1 [T_l I_dn(l) + sdn_l + R_l Rbs_{l+1}],
+!                I_up(l) = Rbs_l + RbR_l I_dn(l). Identical to the two-sided composites (rtop/rbase).
 !     Follows the zcorr beam path (each layer has its own zenith angle) and conserves energy.
 !
 ! Pros: accurate multiple scattering for any w and g, converges with nmu
@@ -39,7 +41,7 @@ module sw_AD_mod
     real(dp), dimension(nmu) :: sup, sdn
   end type ad_layer
 
-  private :: sw_adding_doubling, layer_doubling, add_layers, gauss_legendre, &
+  private :: sw_adding_doubling, layer_doubling, gauss_legendre, &
     & right_div, left_solve, lu_factor, lu_solve, ipow0
   public :: sw_AD
 
@@ -88,7 +90,7 @@ contains
     real(dp), dimension(nlev), intent(out) :: flx_down, flx_up
 
     !! Work variables and arrays
-    integer :: k, l, i, j, ltot
+    integer :: k, l, i, j
     real(dp), dimension(nmu) :: mu, wt, Iup, Idn, ppl, pmn
     real(dp), dimension(nmom, nmu) :: Pl
     real(dp), dimension(nmom) :: chi, c2l, sgn, Pmu0
@@ -96,8 +98,10 @@ contains
     real(dp), dimension(nlay) :: dtau, w0, mu_l, F_top
     real(dp), dimension(nlev) :: cum_trans, T_beam
     real(dp) :: f, colsum
-    type(ad_layer), dimension(nlay+1) :: lay
-    type(ad_layer), dimension(nlay+1) :: rtop, rbase
+    type(ad_layer), dimension(nlay) :: lay
+    real(dp), dimension(nmu,nmu,nlev) :: RbR
+    real(dp), dimension(nmu,nlev) :: Rbs
+    real(dp), dimension(nmu,nmu) :: TD1
 
     !! If zero albedo across all atmospheric layers then return direct beam only
     if (all(w_in(:) <= 1.0e-12_dp)) then
@@ -231,39 +235,26 @@ contains
 
     end do
 
-    !! Lower boundary "surface layer": gas giant, black - nothing is reflected back up
-    ltot = nlay + 1
-    lay(ltot)%Rab(:,:) = 0.0_dp
-    lay(ltot)%Rba(:,:) = 0.0_dp
-    lay(ltot)%Tab(:,:) = 0.0_dp
-    lay(ltot)%Tba(:,:) = 0.0_dp
-    lay(ltot)%sup(:) = 0.0_dp
-    lay(ltot)%sdn(:) = 0.0_dp
-
-    !! Adding - composites from the bottom (rbase(n): bottom n layers) and from the top
-    !! (rtop(n): top n layers)
-    rbase(1) = lay(ltot)
-    do l = 2, ltot
-      call add_layers(lay(ltot-l+1), rbase(l-1), Imat, rbase(l))
-    end do
-
-    rtop(1) = lay(1)
-    do l = 2, nlay
-      call add_layers(rtop(l-1), lay(l), Imat, rtop(l))
+    !! Upward pass - composite of everything below each level: reflection for light from above (RbR)
+    !! and upward beam source (Rbs). Lower boundary: gas giant, black - nothing is reflected back up
+    RbR(:,:,nlev) = 0.0_dp
+    Rbs(:,nlev) = 0.0_dp
+    do l = nlay, 1, -1
+      TD1(:,:) = right_div(lay(l)%Tba, Imat - matmul(RbR(:,:,l+1), lay(l)%Rba))
+      RbR(:,:,l) = lay(l)%Rab(:,:) + matmul(matmul(TD1, RbR(:,:,l+1)), lay(l)%Tab)
+      Rbs(:,l) = lay(l)%sup(:) + matmul(TD1, Rbs(:,l+1) + matmul(RbR(:,:,l+1), lay(l)%sdn))
     end do
 
     !! Top of atmosphere - no diffuse intensity from above, only the beam
-    Iup(:) = rbase(ltot)%sup(:)
-    flx_up(1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Iup(:))
+    Idn(:) = 0.0_dp
+    flx_up(1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Rbs(:,1))
     flx_down(1) = F0_in*mu_in(nlev)*T_beam(1)
 
-    !! Interfaces below layer l: top composite rtop(l), base composite rbase(ltot-l)
-    !! I_up = (I - Rab_b Rba_t)^-1 (Rab_b sdn_t + sup_b),  I_dn = (I - Rba_t Rab_b)^-1 (Rba_t sup_b + sdn_t)
+    !! Downward pass: I_dn(l+1) = (I - Rba_l RbR_{l+1})^-1 [Tab_l I_dn(l) + sdn_l + Rba_l Rbs_{l+1}]
     do l = 1, nlay
-      associate (t => rtop(l), b => rbase(ltot-l))
-        Iup(:) = left_solve(Imat - matmul(b%Rab, t%Rba), matmul(b%Rab, t%sdn) + b%sup)
-        Idn(:) = left_solve(Imat - matmul(t%Rba, b%Rab), matmul(t%Rba, b%sup) + t%sdn)
-      end associate
+      Idn(:) = left_solve(Imat - matmul(lay(l)%Rba, RbR(:,:,l+1)), &
+        & matmul(lay(l)%Tab, Idn) + lay(l)%sdn + matmul(lay(l)%Rba, Rbs(:,l+1)))
+      Iup(:) = Rbs(:,l+1) + matmul(RbR(:,:,l+1), Idn)
       flx_up(l+1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Iup(:))
       flx_down(l+1) = 2.0_dp*pi*sum(wt(:)*mu(:)*Idn(:)) + F0_in*mu_in(nlev)*T_beam(l+1)
     end do
@@ -353,30 +344,6 @@ contains
     lyr%sdn(:) = sdn(:)
 
   end subroutine layer_doubling
-
-  !! Combine a top layer and a bottom layer into one composite
-  subroutine add_layers(top, bot, Imat, comb)
-    implicit none
-
-    type(ad_layer), intent(in) :: top, bot
-    real(dp), dimension(nmu,nmu), intent(in) :: Imat
-    type(ad_layer), intent(out) :: comb
-
-    real(dp), dimension(nmu,nmu) :: TD1, TD2
-
-    !! Multiple reflections between the two layers: (I - Rab_bot Rba_top)^-1, (I - Rba_top Rab_bot)^-1
-    TD1(:,:) = right_div(top%Tba, Imat - matmul(bot%Rab, top%Rba))
-    TD2(:,:) = right_div(bot%Tab, Imat - matmul(top%Rba, bot%Rab))
-
-    comb%Rab(:,:) = top%Rab(:,:) + matmul(matmul(TD1, bot%Rab), top%Tab)
-    comb%Rba(:,:) = bot%Rba(:,:) + matmul(matmul(TD2, top%Rba), bot%Tba)
-    comb%Tab(:,:) = matmul(TD2, top%Tab)
-    comb%Tba(:,:) = matmul(TD1, bot%Tba)
-
-    comb%sup(:) = top%sup(:) + matmul(TD1, bot%sup + matmul(bot%Rab, top%sdn))
-    comb%sdn(:) = bot%sdn(:) + matmul(TD2, top%sdn + matmul(top%Rba, bot%sup))
-
-  end subroutine add_layers
 
   !! Adaptive number of initial doublings: single-scattering error is O(tau0^2 w^2)
   integer function ipow0(omega)

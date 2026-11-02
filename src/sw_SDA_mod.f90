@@ -16,6 +16,10 @@ module sw_SDA_mod
   !! Precision variables
   integer, parameter :: dp = REAL64
 
+  !! Single scattering albedo cap - exactly conservative scattering (w = 1, eigenvalue k = 0) is singular.
+  !! 1 - 1e-12 absorbs < 1e-8 of the incident flux even in a tau ~ 6000 column
+  real(dp), parameter :: w_max = 1.0_dp - 1.0e-12_dp
+
   !! Required constants
   real(dp), parameter :: pi = 4.0_dp * atan(1.0_dp)
   real(dp), parameter :: twopi = 2.0_dp * pi
@@ -102,8 +106,9 @@ contains
     real(dp), dimension(nlay,2) :: Rdir, Tdir
     real(dp), dimension(nlay,2,2) :: Rdiff, Tdiff 
 
-    real(dp), dimension(nlev,2) :: T1k, RkN, U, D
-    real(dp), dimension(nlev,2,2) :: Rst1k, RbkN
+    real(dp), dimension(nlev,2) :: RkN, U, D
+    real(dp), dimension(nlev,2,2) :: RbkN
+    real(dp), dimension(nlay,2,2) :: Minv
 
     real(dp), dimension(2,2) :: E, TT, CC
     real(dp), dimension(2) ::  DD
@@ -113,7 +118,7 @@ contains
     real(dp), dimension(nstr,nlay) :: chi
     real(dp), parameter :: eps_20 = 1.0e-20_dp
 
-    integer :: l, km1, lp1
+    integer :: l, lp1
 
     real(dp), dimension(nlay) :: dtr
 
@@ -165,6 +170,7 @@ contains
     !! Delta-M scaling (f = chi_4, g**4 for HG as sw_SH4 and PICASO)
     fc(:) = chi(nstr,:)
     w0(:) = w_in(:)*((1.0_dp - fc(:))/(1.0_dp - fc(:)*w_in(:)))
+    w0(:) = min(w0(:), w_max)
     dtau(:) = (1.0_dp - w_in(:)*fc(:))*dtau(:)
 
     !! Single zenith angle for the whole column (value at the lower boundary)
@@ -339,13 +345,12 @@ contains
     !! We now have the transmission and reflection coefficents for both the direct and diffuse components
     !! Now we perform the doubling-adding method accros multiple layers
 
-    !! Do boundary conditons first
+    !! One-sided (Riccati) adding: an upward pass for the reflection of everything below each level
+    !! (RbkN) and the beam source (RkN), storing Minv_l = (I - R_l Rb_{l+1})^-1, then one downward sweep
+    !! D_{l+1} = Minv_l [Tdiff_l D_l + Tdir_l T_l + Rdiff_l RkN_{l+1} T_{l+1}],  U_k = RbkN_k D_k + RkN_k T_k
+    !! (identical to the two-sided adding, ~1/3 less work)
 
-    ! Upper
-    T1k(1,:) = 0.0_dp
-    Rst1k(1,:,:) = 0.0_dp
-
-    ! Lower
+    ! Lower boundary - gas giant, no reflection
     RkN(nlev,:) = 0.0_dp
     RbkN(nlev,:,:) = 0.0_dp
 
@@ -355,23 +360,6 @@ contains
     !! E indentity matrix
     E(1,1) = 1.0_dp ; E(1,2) = 0.0_dp ; E(2,1) = 0.0_dp ; E(2,2) = 1.0_dp
 
-    do k = 2, nlev
-      km1 = k - 1        
-
-      TT(:,:) = E(:,:) - matmul(Rdiff(km1,:,:),Rst1k(km1,:,:))
-      TT(:,:) = matinv2(TT(:,:))
-
-      CC(:,:) = matmul(Tdiff(km1,:,:),Rst1k(km1,:,:))
-      CC(:,:) = matmul(CC(:,:),TT(:,:))
-
-      DD(:) = Rdir(km1,:)*T(km1) + matmul(Rdiff(km1,:,:),T1k(km1,:))
-
-      T1k(k,:) = Tdir(km1,:)*T(km1) + matmul(Tdiff(km1,:,:), T1k(km1,:)) + matmul(CC(:,:),DD(:))
-
-      Rst1k(k,:,:) = Rdiff(km1,:,:) + matmul(CC(:,:),Tdiff(km1,:,:))
-
-    end do
-  
     do l = nlay, 1, -1
       lp1 = l + 1
 
@@ -387,19 +375,17 @@ contains
 
       RbkN(l,:,:) = Rdiff(l,:,:) + matmul(CC(:,:),Tdiff(l,:,:))
 
+      Minv(l,:,:) = matinv2(E(:,:) - matmul(Rdiff(l,:,:),RbkN(lp1,:,:)))
+
     end do
 
+    D(1,:) = 0.0_dp
+    do l = 1, nlay
+      DD(:) = matmul(Tdiff(l,:,:),D(l,:)) + Tdir(l,:)*T(l) + matmul(Rdiff(l,:,:),RkN(l+1,:))*T(l+1)
+      D(l+1,:) = matmul(Minv(l,:,:),DD(:))
+    end do
     do k = 1, nlev
-
-      TT(:,:) = E(:,:) - matmul(RbkN(k,:,:),Rst1k(k,:,:))
-      TT(:,:) = matinv2(TT(:,:))
-
-      DD(:) = RkN(k,:)*T(k) + matmul(RbkN(k,:,:),T1k(k,:))
-
-      U(k,:) = matmul(TT(:,:),DD(:))
-
-      D(k,:) = T1k(k,:) + matmul(Rst1k(k,:,:),U(k,:))
-
+      U(k,:) = matmul(RbkN(k,:,:),D(k,:)) + RkN(k,:)*T(k)
     end do
 
     !! Down and up fluxes are multiplied by the incident flux

@@ -201,6 +201,15 @@ contains
     end if
     g3 = (2.0_dp - 3.0_dp*g0*mu)/4.0_dp
     g4 = 1.0_dp - g3
+
+    !! Conservative scattering limit (Meador & Weaver 1980): the general formulas are 0/0 at lam = 0
+    if (lam*dtau < 1.0e-8_dp) then
+      R_b = (g1*dtau + (g3 - g1*mu0)*(1.0_dp - T_dir))/(1.0_dp + g1*dtau)
+      T_b = 1.0_dp - R_b - T_dir
+      R_b = max(R_b, 0.0_dp)
+      T_b = max(T_b, 0.0_dp)
+      return
+    end if
     a1 = g1*g4 + g2*g3
     a2 = g1*g3 + g2*g4
     lm = 1.0_dp - kmu**2

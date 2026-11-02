@@ -20,6 +20,7 @@ program Exo_FMS_RC
   use sw_SH2_mod, only : sw_SH2
   use sw_SH4_mod, only : sw_SH4
   use sw_AD_mod, only : sw_AD
+  use sw_Liou88_mod, only : sw_Liou88
   use sw_disort_ts_mod, only : sw_disort_ts
   use sw_disort_mod, only : sw_disort
   !use sw_Feautrier_mod, only : sw_Feautrier
@@ -369,6 +370,9 @@ program Exo_FMS_RC
     case('sw_AD')
       ! Adding-doubling method with multiple scattering (AddingDoublingRT)
       call sw_AD(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
+    case('sw_Liou88')
+      ! Delta-four-stream discrete ordinates method with multiple scattering (Liou et al. 1988)
+      call sw_Liou88(nlay, nlev, tau_Ve, mu_z_eff, Finc, sw_a, sw_g, sw_up, sw_down, sw_net, asr)
     case('sw_Feautier','sw_Feautrier')
       print*, 'Unsupported sw_scheme (not implemented): ', trim(sw_scheme)
       error stop

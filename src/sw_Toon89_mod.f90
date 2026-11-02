@@ -18,6 +18,10 @@ module sw_Toon89_mod
   !! Precision variables
   integer, parameter :: dp = REAL64
 
+  !! Single scattering albedo cap - exactly conservative scattering (w = 1, eigenvalue k = 0) is singular.
+  !! 1 - 1e-12 absorbs < 1e-8 of the incident flux even in a tau ~ 6000 column
+  real(dp), parameter :: w_max = 1.0_dp - 1.0e-12_dp
+
   !! How close to the lambda*mu0 = 1 resonance before mu0 is nudged
   real(dp), parameter :: res_eps = 1.0e-6_dp
 
@@ -122,6 +126,7 @@ contains
 
     !! Delta-Eddington scaling
     w0(:) = ((1.0_dp - g_in(:)**2)*w_in(:))/(1.0_dp-w_in(:)*g_in(:)**2)
+    w0(:) = min(w0(:), w_max)
     dtau(:) = (1.0_dp-w_in(:)*g_in(:)**2)*dtau_in(:)
     hg(:) = g_in(:)/(1.0_dp + g_in(:))
 

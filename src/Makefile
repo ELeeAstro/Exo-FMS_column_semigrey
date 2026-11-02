@@ -54,10 +54,11 @@ OBJECTS = \
 		sw_SH2_mod.o \
 		sw_SH4_mod.o \
 		sw_AD_mod.o \
+		sw_Liou88_mod.o \
 		lw_AA_E_mod.o \
 		lw_AA_L_mod.o \
 			lw_sc_linear_mod.o \
-			lw_sc_scat_ric.o \
+			lw_sc_scat_ric_mod.o \
 		lw_VIM_E_mod.o \
 		lw_VIM_L_mod.o \
 		lw_Toon89_mod.o \

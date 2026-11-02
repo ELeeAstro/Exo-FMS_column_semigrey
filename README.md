@@ -33,17 +33,18 @@ No external libraries are needed, the DISORT toolchain (including its own LAPACK
 # Personal recommendations
 
 For the longwave: \
-'lw_sc_scat_ric' - the best balance between speed and accuracy. Close to the n-stream DISORT benchmark for most scattering properties, at around twice the cost of Toon89 (NOT PUBLISHED YET). \
-'lw_Toon89' - fast but accurate. A good choice for GCMs when the longwave scattering is not too strong. \
-'lw_AD' - for accuracy, but slower. Accurate for any single scattering albedo and asymmetry factor, including very strongly scattering atmospheres, but much slower than the two-stream methods. \
-'lw_TAS' - for weak scattering. Nearly as fast as AA_L and noticeably more accurate when the scattering is weak to moderate, but fails for strongly scattering atmospheres. \
-'lw_AA_L' - for pure speed. Very fast and very good for absorption, but becomes inaccurate as the scattering increases.
+'lw_Toon89' - the default choice. Fast and robust for any single scattering albedo. \
+'lw_DDA' - for strong scattering at Toon89 cost. Setting use_sft = .True. (source function technique along the Hogan (2024) angles) is more accurate than Toon89 but around double cost. \
+'lw_sc_scat_ric' - for accurate heating rates. Becomes inaccurate for optically thick, near-conservative scattering (ssa > ~0.95) unless the vertical resolution is increased (NOT PUBLISHED YET). \
+'lw_AD' - for reference accuracy, slow method.  \
+'lw_AA_L' - if there is no longwave scattering. The fastest method and exact for pure absorption, but inaccurate once scattering is present. \
+'lw_TAS' - a fast method for weak scattering a < 0.5 \
 
 For the shortwave: \
-'sw_adding' - the best balance between speed and accuracy. The fastest multiple scattering method here, and works well for clouds and hazes as well as uniform atmospheres. \
-'sw_Toon89' - fast and dependable. The well tested Toon89 two-stream method, also used in Exo-FMS_2, so results carry over directly between the column and 3D models. \
-'sw_SDA' - for four-stream accuracy. Clearly more accurate than the two-stream methods for all scattering properties, at around three times the cost of Toon89 (same answer as sw_SH4 but twice as fast). \
-'sw_AD' - for the highest accuracy, but slower. Very close to the n-stream DISORT benchmark for any single scattering albedo and asymmetry factor, but much slower than the two- and four-stream methods. \
+'sw_adding' - the default choice. The fastest multiple scattering method, works well for clouds and hazes as well as uniform atmospheres. \
+'sw_Toon89' - The well tested Toon89 two-stream method.\
+'sw_Liou88' - for four-stream accuracy. The most accurate method apart from sw_AD, at ~2.4x the cost of Toon89 - the fastest four-stream method here. \
+'sw_AD' - for reference accuracy, but slow.  \
 'sw_direct' - if there is no shortwave scattering.
 
 # Methods
@@ -55,8 +56,9 @@ For the shortwave method we have:
 4. Toon89 multiple scattering method
 5. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO
 6. Adding-doubling (AD) 8-stream multiple scattering, converted from AddingDoublingRT
-7. Two-stream DISORT version
-8. n-stream DISORT version (benchmark)
+7. Delta-four-stream discrete ordinates with adding (Liou88, Liou et al. 1988)
+8. Two-stream DISORT version
+9. n-stream DISORT version (benchmark)
 
 Feautrier shortwave is in development.
 
@@ -64,12 +66,12 @@ For the longwave method we have:
 1. Absorption approximation with exponential in tau function (AA_E)
 2. Absorption approximation with linear in tau function (AA_L)
 3. Short characteristics (sc) with linear interpolants
-4. Short characteristics 8-stream discrete ordinates with anisotropic multiple scattering, solved by Riccati invariant imbedding (sc_scat_ric)
+4. Short characteristics 8-stream discrete ordinates with anisotropic multiple scattering, solved by Riccati invariant imbedding, with a source function technique flux integration along the Hogan (2024) angles (sc_scat_ric)
 5. Toon89 multiple scattering method
 6. Two- and four-stream spherical harmonics (SH2 and SH4), converted from PICASO
 7. Variational iteration method (VIM), exponential and linear in tau (VIM_E and VIM_L)
 8. Adding-doubling (AD) 8-stream multiple scattering, converted from AddingDoublingRT
-9. Four-stream discrete ordinates adding method (DDA, Zhang et al. 2013)
+9. Four-stream discrete ordinates adding method (DDA, Zhang et al. 2013), with an optional source function technique flux integration along the Hogan (2024) angles (use_sft, off by default)
 10. Delta-two- and four-stream combination method (Fu97, Fu et al. 1997)
 11. Chou et al. (1999) scaling with the Tang et al. (2018) adjustment (TAS)
 12. Two-stream DISORT version
@@ -106,6 +108,7 @@ sw_scheme: \
 'sw_SH2' - two-stream spherical harmonic method (PICASO) \
 'sw_SH4' - four-stream spherical harmonic method (PICASO) \
 'sw_AD' - adding-doubling method \
+'sw_Liou88' - delta-four-stream discrete ordinates method (Liou et al. 1988) \
 'sw_disort_ts' - two stream disort method \
 'sw_disort' - n-stream disort method (benchmark, slow)
 
@@ -192,7 +195,7 @@ The DISORT toolchain is compiled in double precision (see the makefile), as sing
 
 In methods that use Gaussian quadrature to perform the mu integration in intensity (to calculate the flux), various values and weights can be changed for testing at the top of the modules.
 Most longwave methods use the 4 node Gauss-Jacobi quadrature from Hogan (2024).
-The schemes where the quadrature points are also the scattering streams (sc_scat_ric, AD) use Gauss-Legendre points.
+The schemes where the quadrature points are also the scattering streams (sc_scat_ric, AD) use Gauss-Legendre points. sc_scat_ric uses its Gauss-Legendre streams for the scattering only, the fluxes are integrated along the Hogan (2024) angles (use_sft, on by default).
 You will need to clean and recompile the code if these are changed. Beware, some codes use the classical Gauss-Legendre method (flux = 2pi * intensity), while others include the weighting in the intensity (flux = pi * intensity).
 
 # Future developments
