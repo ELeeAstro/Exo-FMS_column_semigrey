@@ -124,3 +124,7 @@ LAPACK.o: LAPACK.f
 	$(F90) $(DISORT_FLAGS) $(DEFS) -c $<
 RDI1MACH.o: RDI1MACH.f
 	$(F90) $(DISORT_FLAGS) $(DEFS) -c $<
+
+# Every scattering wrapper uses the common absorption-only beam path.
+sw_adding_mod.o sw_SDA_mod.o sw_Toon89_mod.o sw_disort_ts_mod.o sw_disort_mod.o \
+sw_SH2_mod.o sw_SH4_mod.o sw_AD_mod.o sw_Liou88_mod.o sw_sc_scat_ric_mod.o: sw_direct_mod.o

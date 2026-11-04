@@ -8,7 +8,7 @@
 !     thermal source q replaced by the single-scattered stellar beam.
 !     Only the azimuthally averaged (m = 0) intensity is needed for fluxes.
 !
-!     Beam source (directional, per stream i, layer k with its own mu0_k as the zcorr beam path):
+!     Beam source (directional, per stream i and layer k, using one column mu0):
 !       J(t, -/+mu_i) = w_k F_top,k/(4 pi) P(-/+mu_i, -mu0) exp(-t/mu0),
 !       P(-mu_i,-mu0) = sum_l (2l+1) chi_l P_l(mu_i) P_l(mu0),  P(+mu_i,-mu0) = sum_l (-1)^l (2l+1) chi_l P_l(mu_i) P_l(mu0)
 !     integrated exactly along each stream across the layer (layer optics, not level-averaged):
@@ -19,7 +19,7 @@
 !
 !     Boundaries: no diffuse intensity at the top (d_1 = 0); gas giant, black lower boundary
 !     (R_K = 0, s_K = 0). Fluxes = diffuse (2 pi sum w mu I) + direct beam F0 mu0 exp(-tau/mu0).
-!     The beam follows the zcorr path as sw_AD: mu0_k = mu_z(k+1) and F_top,k = F0 mu_z(nlev)/mu0_k
+!     The same solar zenith angle is used in every layer.
 !     T_beam(k), so the beam scatters exactly the energy it loses.
 !
 ! Notes:
@@ -41,6 +41,7 @@
 
 module sw_sc_scat_ric_mod
   use, intrinsic :: iso_fortran_env
+  use sw_direct_mod, only : sw_direct
   implicit none
 
   !! Precision variables
@@ -94,8 +95,7 @@ contains
     integer, intent(in) :: nlay, nlev
     real(dp), dimension(nlev), intent(in) :: tau_e
     real(dp), dimension(nlay), intent(in) :: ssa, gg
-    real(dp), dimension(nlev), intent(in) :: mu_z
-    real(dp), intent(in) :: Finc
+    real(dp), intent(in) :: mu_z, Finc
 
     !! Output variables
     real(dp), dimension(nlev), intent(out) :: sw_up, sw_down, sw_net
@@ -104,18 +104,18 @@ contains
     !! Work variables for the internal sub-layering
     integer :: k, j, ns
     real(dp), dimension(nlay*nsub+1) :: tau_s, sw_up_s, sw_down_s
-    real(dp), dimension(nlay*nsub) :: ssa_s, gg_s, mu_s
+    real(dp), dimension(nlay*nsub) :: ssa_s, gg_s
+
+    if (all(ssa(:) <= 1.0e-12_dp)) then
+      call sw_direct(nlev, tau_e, mu_z, Finc, sw_up, sw_down, sw_net, asr)
+      return
+    end if
 
     !! Shortwave flux calculation
-    if ((mu_z(nlev) > 0.0_dp) .and. (Finc > 0.0_dp)) then
+    if ((mu_z > 0.0_dp) .and. (Finc > 0.0_dp)) then
 
       if (nsub == 1) then
-        if (mu_z(nlev) == mu_z(1)) then
-          mu_s(:) = mu_z(nlev)
-        else
-          mu_s(:) = mu_z(2:nlev)
-        end if
-        call sw_sc_scat_ric_solve(nlay, nlev, Finc, mu_z(nlev), mu_s(:), tau_e(:), ssa(:), gg(:), &
+        call sw_sc_scat_ric_solve(nlay, nlev, Finc, mu_z, tau_e, ssa, gg, &
           & sw_down(:), sw_up(:))
       else
         !! Split each layer into nsub optically equal sub-layers with the layer properties
@@ -126,14 +126,9 @@ contains
             tau_s((k-1)*nsub+j+1) = tau_e(k) + real(j,dp)/real(nsub,dp)*(tau_e(k+1) - tau_e(k))
             ssa_s((k-1)*nsub+j) = ssa(k)
             gg_s((k-1)*nsub+j) = gg(k)
-            if (mu_z(nlev) == mu_z(1)) then
-              mu_s((k-1)*nsub+j) = mu_z(nlev)
-            else
-              mu_s((k-1)*nsub+j) = mu_z(k+1)
-            end if
           end do
         end do
-        call sw_sc_scat_ric_solve(ns, ns+1, Finc, mu_z(nlev), mu_s(:), tau_s(:), ssa_s(:), gg_s(:), &
+        call sw_sc_scat_ric_solve(ns, ns+1, Finc, mu_z, tau_s, ssa_s, gg_s, &
           & sw_down_s(:), sw_up_s(:))
         do k = 1, nlev
           sw_down(k) = sw_down_s((k-1)*nsub+1)
@@ -154,13 +149,12 @@ contains
 
   end subroutine sw_sc_scat_ric
 
-  subroutine sw_sc_scat_ric_solve(nlay, nlev, F0_in, mu_bot, mu_l, tau_in, w_in, g_in, flx_down, flx_up)
+  subroutine sw_sc_scat_ric_solve(nlay, nlev, F0_in, mu0, tau_in, w_in, g_in, flx_down, flx_up)
     implicit none
 
     !! Input variables
     integer, intent(in) :: nlay, nlev
-    real(dp), intent(in) :: F0_in, mu_bot
-    real(dp), dimension(nlay), intent(in) :: mu_l
+    real(dp), intent(in) :: F0_in, mu0
     real(dp), dimension(nlev), intent(in) :: tau_in
     real(dp), dimension(nlay), intent(in) :: w_in, g_in
 
@@ -210,19 +204,19 @@ contains
       end do
     end do
 
-    !! Direct beam transmission to each level along the (zcorr) beam path, scaled tau
+    !! Direct beam transmission to each level, using one column zenith angle
     cum_trans(1) = 0.0_dp
     do k = 1, nlay
-      cum_trans(k+1) = cum_trans(k) + dtau(k)/mu_l(k)
+      cum_trans(k+1) = cum_trans(k) + dtau(k)/mu0
     end do
     T_beam(:) = exp(-min(cum_trans(:), 200.0_dp))
 
-    !! Beam flux (normal to the beam) at the top of each layer - energy conserving with zcorr
-    F_top(:) = F0_in*mu_bot/mu_l(:)*T_beam(1:nlay)
+    !! Beam flux normal to the beam at the top of each layer
+    F_top(:) = F0_in*T_beam(1:nlay)
 
     !! If no scattering at all, return the direct beam only
     if (all(w0(:) <= 1.0e-12_dp)) then
-      flx_down(:) = F0_in*mu_bot*T_beam(:)
+      flx_down(:) = F0_in*mu0*T_beam(:)
       flx_up(:) = 0.0_dp
       return
     end if
@@ -317,9 +311,9 @@ contains
 
       !! Beam phase vectors: P(-mu_i,-mu0) (into the downward streams) and P(+mu_i,-mu0) (upward)
       Pmu0(0) = 1.0_dp
-      if (nstr > 1) Pmu0(1) = mu_l(k)
+      if (nstr > 1) Pmu0(1) = mu0
       do l = 1, nstr-2
-        Pmu0(l+1) = (real(2*l+1,dp)*mu_l(k)*Pmu0(l) - real(l,dp)*Pmu0(l-1))/real(l+1,dp)
+        Pmu0(l+1) = (real(2*l+1,dp)*mu0*Pmu0(l) - real(l,dp)*Pmu0(l-1))/real(l+1,dp)
       end do
       pdn(:) = 0.0_dp
       pup(:) = 0.0_dp
@@ -336,7 +330,7 @@ contains
       end if
 
       J0 = w0(k)*F_top(k)/fourpi
-      a0 = 1.0_dp/mu_l(k)
+      a0 = 1.0_dp/mu0
       D = dtau(k)
       do i = 1, nmu
         bd(i,k) = J0*pdn(i)*(D/uarr(i))*exp(-min(a0, 1.0_dp/uarr(i))*D)*em1x(abs(a0 - 1.0_dp/uarr(i))*D)
@@ -534,7 +528,7 @@ contains
         flx_up(k) = flx_up(k) + c2(m)*w(m)*uarr(m)
       end do
       !! Diffuse fluxes plus the direct beam
-      flx_down(k) = twopi*flx_down(k) + F0_in*mu_bot*T_beam(k)
+      flx_down(k) = twopi*flx_down(k) + F0_in*mu0*T_beam(k)
       flx_up(k) = twopi*flx_up(k)
       up(:) = dn(:)
     end do

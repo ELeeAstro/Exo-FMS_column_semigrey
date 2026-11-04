@@ -171,10 +171,6 @@ sw_gc - shortwave asymmetry factor (constant at all layers) \
 lw_ac - longwave single scattering albedo (constant at all layers) \
 lw_gc - longwave asymmetry factor (constant at all layers)
 
-zcorr - include zenith angle correction (.True.) \
-zcorr_meth - zenith angle correction method (1,2)  \
-radius - planetary radius at the model's lower boundary (m)
-
 iIC - Initial condition selection integer (3 = Guillot (2010) profile using k_V and k_IR, 6 = adiabatic from Tdeep_init to Tstrat_init) \
 corr - Flag to perform the adiabatic gradient correction in the initial conditions
 
